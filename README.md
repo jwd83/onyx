@@ -5,22 +5,28 @@ Obsidian vault) as a static website. Intentionally minimal: one `onyx.go` file,
 a single `go.mod` with no third-party dependencies, no npm, no build system, and
 no runtime server.
 
-## Install
-
-```sh
-go install onyx.jwd.me/onyx@latest
-```
-
-This installs a command named `onyx`. Or run without installing:
+## Quick start
 
 ```sh
 go run onyx.jwd.me/onyx@latest
 ```
 
+Run that from the root of a site (a directory containing `docs/`), or pass a
+site path in the same one-liner:
+
+```sh
+go run onyx.jwd.me/onyx@latest path/to/site
+```
+
+If you want a reusable `onyx` command instead:
+
+```sh
+go install onyx.jwd.me/onyx@latest
+```
+
 ## Usage
 
-Run it from the root of a site (a directory containing a `docs/` folder), or
-pass that path as an argument:
+With the installed command:
 
 ```sh
 onyx              # build the site rooted at the current directory
