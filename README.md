@@ -8,13 +8,13 @@ no runtime server.
 ## Install
 
 ```sh
-go install onyx.jwd.me@latest
+go install onyx.jwd.me/onyx@latest
 ```
 
-Or run without installing:
+This installs a command named `onyx`. Or run without installing:
 
 ```sh
-go run onyx.jwd.me@latest
+go run onyx.jwd.me/onyx@latest
 ```
 
 ## Usage
