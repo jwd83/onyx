@@ -42,6 +42,19 @@ type Page struct {
 	HasMath     bool
 }
 
+// loadVault builds the in-memory vault and fixes each Page's identity in a
+// fixed order that the rest of the pipeline depends on:
+//
+//   - read pages from every source into Notes, then sort them for stable output;
+//   - assign each note its PageRel and register it in ByPath/ByBase;
+//   - choose the home page, then resolve the site title (generatedHome reads it),
+//     synthesizing a home if none exists;
+//   - assign canonical URL/SourceURL to every note;
+//   - if the home is generated, build its HTML now — renderVault later skips
+//     generated pages, so this is the only place that HTML is produced.
+//
+// After loadVault returns, every page has a stable PageRel and URL; later stages
+// only read those fields (writePage re-relativizes URLs on a per-page copy).
 func loadVault(cfg Config) (*Vault, []string, error) {
 	vault := &Vault{
 		Config:       cfg,

@@ -8,6 +8,23 @@ import (
 	"path/filepath"
 )
 
+// buildSite runs the build pipeline. The order below is load-bearing and must
+// be preserved:
+//
+//  1. ensureRootIndexWritable / ensureNoJekyll — refuse to clobber user files
+//     before anything is written.
+//  2. loadVault — discover sources, load pages, choose or generate the home,
+//     and assign every page its canonical PageRel/URL/SourceURL. Nothing after
+//     this point may assume a URL exists that loadVault did not set.
+//  3. renderVault — render Markdown to HTML; this reads page URLs to resolve
+//     links and records each page's outgoing links.
+//  4. computeBacklinks — derive backlinks from the outgoing links produced in
+//     step 3, so it must run after renderVault.
+//  5. preparePublic then writeAssets/writePages/search/graph — only touch the
+//     filesystem once the in-memory vault is fully built.
+//
+// Reordering these (for example assigning URLs after rendering, or computing
+// backlinks before rendering) breaks the Page lifecycle the later stages rely on.
 func buildSite(cfg Config) ([]string, error) {
 	if err := ensureRootIndexWritable(filepath.Join(cfg.Root, "index.html")); err != nil {
 		return nil, err
