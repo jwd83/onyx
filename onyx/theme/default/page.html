@@ -1,0 +1,75 @@
+{{.Generated}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .Page.IsHome}}{{.Site.Title}}{{else}}{{.Page.Title}} - {{.Site.Title}}{{end}}</title>
+  <link rel="stylesheet" href="{{.CSSURL}}">
+  <script>window.ONYX_ROOT = {{.RootScript}}; window.ONYX_PAGE = {{.PageID}};</script>
+  {{if or .Search .Graph}}<script defer src="{{.JSURL}}"></script>{{end}}{{if .Page.HasMath}}<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>{{end}}
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="onyx-shell">
+    <aside class="onyx-sidebar">
+      <a class="onyx-brand" href="{{.HomeURL}}">{{.Site.Title}}</a>
+      {{if .Search}}
+      <div class="onyx-search">
+        <input id="onyx-search" type="search" autocomplete="off" placeholder="Search notes">
+        <div id="onyx-search-results" class="onyx-search-results" hidden></div>
+      </div>
+      {{end}}
+      {{if .Graph}}
+      <button type="button" id="onyx-graph-open" class="onyx-graph-btn" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+          <circle cx="5" cy="6" r="2.2"></circle>
+          <circle cx="18" cy="7" r="2.2"></circle>
+          <circle cx="12" cy="17" r="2.2"></circle>
+          <line x1="6.8" y1="7.2" x2="10.4" y2="15.4"></line>
+          <line x1="16.4" y1="8.6" x2="13.3" y2="15.5"></line>
+          <line x1="7" y1="6.5" x2="16" y2="6.8"></line>
+        </svg>
+        Graph view
+      </button>
+      {{end}}
+      <nav aria-label="Notes">
+        {{.Nav}}
+      </nav>
+    </aside>
+    <main id="content" class="onyx-main">
+      <article class="onyx-note">
+        <header class="onyx-note-header">
+          {{if .Page.SourceRel}}<p class="onyx-path">{{.Page.SourceRel}}</p>{{end}}
+          <h1>{{.Page.Title}}</h1>
+          {{if .ShowSource}}<a class="onyx-source" href="{{.Page.SourceURL}}">Markdown</a>{{end}}
+        </header>
+        <div class="onyx-content">
+          {{.Page.HTML}}
+        </div>
+        {{if and .Backlinks .Site.Title}}
+        <section class="onyx-backlinks" aria-labelledby="backlinks-title">
+          <h2 id="backlinks-title">Linked From</h2>
+          <ul>
+            {{range .Backlinks}}<li><a href="{{.URL}}">{{.Title}}</a> <span>{{.Path}}</span></li>{{end}}
+          </ul>
+        </section>
+        {{end}}
+      </article>
+    </main>
+  </div>
+  {{if .Graph}}
+  <div id="onyx-graph-modal" class="onyx-graph-modal" hidden role="dialog" aria-modal="true" aria-label="Knowledge graph">
+    <div class="onyx-graph-backdrop" data-graph-close></div>
+    <div class="onyx-graph-panel">
+      <div class="onyx-graph-toolbar">
+        <span class="onyx-graph-title">Graph</span>
+        <span class="onyx-graph-hint">drag to pan &middot; scroll to zoom &middot; click a node to open</span>
+        <button type="button" class="onyx-graph-close" data-graph-close aria-label="Close graph">&times;</button>
+      </div>
+      <canvas id="onyx-graph-canvas"></canvas>
+    </div>
+  </div>
+  {{end}}
+</body>
+</html>
