@@ -1,9 +1,7 @@
 # Onyx
 
 A tiny static-site generator that publishes a folder of Markdown notes (e.g. an
-Obsidian vault) as a static website. Intentionally minimal: one `onyx.go` file,
-a single `go.mod` with no third-party dependencies, no npm, no build system, and
-no runtime server.
+Obsidian vault) as a static website. Intentionally minimal with no third-party dependencies, no npm, and no runtime server. Just pure golang.
 
 ## Quick start
 
