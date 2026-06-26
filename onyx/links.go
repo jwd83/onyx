@@ -3,7 +3,6 @@ package main
 import (
 	"net/url"
 	"path"
-	"sort"
 	"strings"
 )
 
@@ -46,13 +45,8 @@ func (r *MarkdownRenderer) resolveNote(target string) *Page {
 		return r.current
 	}
 
-	candidates := []string{}
-	if path.Dir(r.current.PageRel) != "." {
-		candidates = append(candidates, path.Join(path.Dir(r.current.PageRel), target))
-	}
-	candidates = append(candidates, target)
-	for _, candidate := range candidates {
-		if page := r.vault.ByPath[strings.ToLower(path.Clean(candidate))]; page != nil {
+	for _, key := range relativeCandidates(path.Dir(r.current.PageRel), target) {
+		if page := r.vault.ByPath[key]; page != nil {
 			return page
 		}
 	}
@@ -69,31 +63,56 @@ func (r *MarkdownRenderer) resolveNote(target string) *Page {
 		return matches[0]
 	}
 
-	best := nearestPage(r.current, matches)
-	if best == nil {
-		r.warn("ambiguous wikilink [[" + target + "]]")
+	folders := make([]string, len(matches))
+	for i, page := range matches {
+		folders[i] = path.Dir(page.PageRel)
 	}
-	return best
+	if idx, ok := nearestByFolder(path.Dir(r.current.PageRel), folders); ok {
+		return matches[idx]
+	}
+	r.warn("ambiguous wikilink [[" + target + "]]")
+	return nil
 }
 
-func nearestPage(current *Page, matches []*Page) *Page {
-	bestDistance := 1 << 30
-	var best *Page
+// relativeCandidates returns the ordered lookup keys for target as seen from
+// baseDir: the current-directory-relative form first (when baseDir is a real
+// subfolder), then target as-is. Keys are cleaned and lowercased to match the
+// vault's path indexes. It does no leading-slash handling; callers that allow
+// root-absolute targets must strip the slash and pass baseDir "." themselves.
+func relativeCandidates(baseDir, target string) []string {
+	var keys []string
+	if baseDir != "." && baseDir != "" {
+		keys = append(keys, indexKey(path.Join(baseDir, target)))
+	}
+	return append(keys, indexKey(target))
+}
+
+func indexKey(p string) string {
+	return strings.ToLower(path.Clean(p))
+}
+
+// nearestByFolder picks the single match whose folder is closest to currentDir
+// and returns its index. ok is false when the list is empty or the nearest
+// distance is shared by more than one match — i.e. the reference is ambiguous.
+func nearestByFolder(currentDir string, folders []string) (int, bool) {
+	best := 1 << 30
+	bestIdx := -1
 	tie := false
-	for _, candidate := range matches {
-		distance := folderDistance(path.Dir(current.PageRel), path.Dir(candidate.PageRel))
-		if distance < bestDistance {
-			bestDistance = distance
-			best = candidate
+	for i, folder := range folders {
+		distance := folderDistance(currentDir, folder)
+		switch {
+		case distance < best:
+			best = distance
+			bestIdx = i
 			tie = false
-		} else if distance == bestDistance {
+		case distance == best:
 			tie = true
 		}
 	}
-	if tie {
-		return nil
+	if bestIdx < 0 || tie {
+		return -1, false
 	}
-	return best
+	return bestIdx, true
 }
 
 func folderDistance(a, b string) int {
@@ -125,30 +144,27 @@ func (r *MarkdownRenderer) resolveAsset(target string) (string, bool) {
 		return "", false
 	}
 	target = strings.TrimPrefix(path.Clean(target), "./")
-	var candidates []string
-	if path.Dir(r.current.SourceRel) != "." {
-		candidates = append(candidates, path.Join(path.Dir(r.current.SourceRel), target))
-	}
-	candidates = append(candidates, target)
-	for _, candidate := range candidates {
-		if rel, ok := r.vault.AssetsByPath[strings.ToLower(candidate)]; ok {
+
+	for _, key := range relativeCandidates(path.Dir(r.current.SourceRel), target) {
+		if rel, ok := r.vault.AssetsByPath[key]; ok {
 			return rel, true
 		}
 	}
 	if strings.Contains(target, "/") {
 		return "", false
 	}
+
 	matches := r.vault.AssetsByBase[strings.ToLower(path.Base(target))]
 	if len(matches) == 1 {
 		return matches[0], true
 	}
 	if len(matches) > 1 {
-		currentDir := path.Dir(r.current.SourceRel)
-		sort.Slice(matches, func(i, j int) bool {
-			return folderDistance(currentDir, path.Dir(matches[i])) < folderDistance(currentDir, path.Dir(matches[j]))
-		})
-		if folderDistance(currentDir, path.Dir(matches[0])) != folderDistance(currentDir, path.Dir(matches[1])) {
-			return matches[0], true
+		folders := make([]string, len(matches))
+		for i, rel := range matches {
+			folders[i] = path.Dir(rel)
+		}
+		if idx, ok := nearestByFolder(path.Dir(r.current.SourceRel), folders); ok {
+			return matches[idx], true
 		}
 		r.warn("ambiguous asset [[" + target + "]]")
 	}
@@ -163,14 +179,11 @@ func (r *MarkdownRenderer) resolveMarkdownHref(dest string) string {
 
 	cleanDest, anchor := splitURLAnchor(dest)
 	if strings.EqualFold(path.Ext(cleanDest), ".md") {
+		// Root-absolute dests ("/x.md") never reach here — isExternalOrAbsolute
+		// returns them above — so target is always source-relative.
 		target := strings.TrimSuffix(cleanDest, ".md")
-		candidates := []string{}
-		if !strings.HasPrefix(target, "/") && path.Dir(r.current.PageRel) != "." {
-			candidates = append(candidates, path.Join(path.Dir(r.current.PageRel), target))
-		}
-		candidates = append(candidates, strings.TrimPrefix(target, "/"))
-		for _, candidate := range candidates {
-			if page := r.vault.ByPath[strings.ToLower(path.Clean(candidate))]; page != nil {
+		for _, key := range relativeCandidates(path.Dir(r.current.PageRel), target) {
+			if page := r.vault.ByPath[key]; page != nil {
 				href := relativeURL(r.current, page.URL)
 				if anchor != "" {
 					href += "#" + url.PathEscape(slugify(anchor))
