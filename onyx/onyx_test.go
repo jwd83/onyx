@@ -45,6 +45,37 @@ func TestBuildRendersHomepageWikilinksAndBacklinks(t *testing.T) {
 	}
 }
 
+func TestDefaultThemeIncludesDarkModeToggleWithoutFeatureScripts(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nsearch = false\ngraph = false\n")
+	writeTestFile(t, root, "docs/index.md", "# Home\n\nA quiet homepage.\n")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	index := readTestFile(t, root, "index.html")
+	for _, want := range []string{
+		`id="onyx-theme-toggle"`,
+		`localStorage.getItem("onyx-theme")`,
+		`document.documentElement.dataset.onyxTheme`,
+		`document.dispatchEvent(new Event("onyx-theme-change"))`,
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("default page is missing dark-mode support %q:\n%s", want, index)
+		}
+	}
+	if strings.Contains(index, `src="public/onyx.js"`) {
+		t.Fatalf("feature script should stay disabled when search and graph are disabled:\n%s", index)
+	}
+
+	css := readTestFile(t, root, "public/onyx.css")
+	if !strings.Contains(css, `:root[data-onyx-theme="dark"]`) {
+		t.Fatalf("default CSS is missing dark theme variables:\n%s", css)
+	}
+}
+
 func TestBuildResolvesSlashWikilinksRelativeToCurrentFolder(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")

@@ -417,4 +417,10 @@
     if (!isOpen() && !typing && (e.key === "g" || e.key === "G")) { e.preventDefault(); open(); }
     else if (isOpen() && e.key === "Escape") { e.preventDefault(); close(); }
   });
+  document.addEventListener("onyx-theme-change", function () {
+    if (!isOpen()) return;
+    readColors();
+    dirty = true;
+    draw();
+  });
 })();

@@ -5,6 +5,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{if .Page.IsHome}}{{.Site.Title}}{{else}}{{.Page.Title}} - {{.Site.Title}}{{end}}</title>
+  <script>
+    (function () {
+      var theme = "";
+      try { theme = localStorage.getItem("onyx-theme") || ""; } catch (err) {}
+      if (theme !== "dark" && theme !== "light") {
+        theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      document.documentElement.dataset.onyxTheme = theme;
+    })();
+  </script>
   <link rel="stylesheet" href="{{.CSSURL}}">
   <script>window.ONYX_ROOT = {{.RootScript}}; window.ONYX_PAGE = {{.PageID}};</script>
   {{if or .Search .Graph}}<script defer src="{{.JSURL}}"></script>{{end}}{{if .Page.HasMath}}<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>{{end}}
@@ -13,7 +23,25 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <div class="onyx-shell">
     <aside class="onyx-sidebar">
-      <a class="onyx-brand" href="{{.HomeURL}}">{{.Site.Title}}</a>
+      <div class="onyx-sidebar-top">
+        <a class="onyx-brand" href="{{.HomeURL}}">{{.Site.Title}}</a>
+        <button type="button" id="onyx-theme-toggle" class="onyx-theme-toggle" aria-label="Use dark theme" aria-pressed="false" title="Use dark theme" hidden>
+          <svg class="onyx-theme-icon onyx-theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path>
+          </svg>
+          <svg class="onyx-theme-icon onyx-theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="m4.9 4.9 1.4 1.4"></path>
+            <path d="m17.7 17.7 1.4 1.4"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+            <path d="m6.3 17.7-1.4 1.4"></path>
+            <path d="m19.1 4.9-1.4 1.4"></path>
+          </svg>
+        </button>
+      </div>
       {{if .Search}}
       <div class="onyx-search">
         <input id="onyx-search" type="search" autocomplete="off" placeholder="Search notes">
@@ -58,6 +86,51 @@
       </article>
     </main>
   </div>
+  <script>
+    (function () {
+      var button = document.getElementById("onyx-theme-toggle");
+      if (!button) return;
+
+      var root = document.documentElement;
+      var storageKey = "onyx-theme";
+      var media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+      function storedTheme() {
+        var theme = "";
+        try { theme = localStorage.getItem(storageKey) || ""; } catch (err) {}
+        return theme === "dark" || theme === "light" ? theme : "";
+      }
+
+      function systemTheme() {
+        return media && media.matches ? "dark" : "light";
+      }
+
+      function applyTheme(theme) {
+        root.dataset.onyxTheme = theme;
+        var dark = theme === "dark";
+        var label = dark ? "Use light theme" : "Use dark theme";
+        button.setAttribute("aria-pressed", String(dark));
+        button.setAttribute("aria-label", label);
+        button.title = label;
+      }
+
+      button.hidden = false;
+      applyTheme(storedTheme() || root.dataset.onyxTheme || systemTheme());
+
+      button.addEventListener("click", function () {
+        var theme = root.dataset.onyxTheme === "dark" ? "light" : "dark";
+        try { localStorage.setItem(storageKey, theme); } catch (err) {}
+        applyTheme(theme);
+        document.dispatchEvent(new Event("onyx-theme-change"));
+      });
+
+      function syncSystemTheme(event) {
+        if (!storedTheme()) applyTheme(event.matches ? "dark" : "light");
+      }
+      if (media && media.addEventListener) media.addEventListener("change", syncSystemTheme);
+      else if (media && media.addListener) media.addListener(syncSystemTheme);
+    })();
+  </script>
   {{if .Graph}}
   <div id="onyx-graph-modal" class="onyx-graph-modal" hidden role="dialog" aria-modal="true" aria-label="Knowledge graph">
     <div class="onyx-graph-backdrop" data-graph-close></div>
