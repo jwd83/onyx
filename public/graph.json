@@ -1,0 +1,114 @@
+{
+  "nodes": [
+    {
+      "id": "configuration",
+      "title": "Configuration",
+      "url": "public/configuration/",
+      "degree": 4
+    },
+    {
+      "id": "deploying",
+      "title": "Deploying",
+      "url": "public/deploying/",
+      "degree": 4
+    },
+    {
+      "id": "development",
+      "title": "Development",
+      "url": "public/development/",
+      "degree": 3
+    },
+    {
+      "id": "frontmatter",
+      "title": "Frontmatter",
+      "url": "public/frontmatter/",
+      "degree": 3
+    },
+    {
+      "id": "index",
+      "title": "Onyx",
+      "url": "",
+      "degree": 7
+    },
+    {
+      "id": "markdown",
+      "title": "Markdown Support",
+      "url": "public/markdown/",
+      "degree": 3
+    },
+    {
+      "id": "quick-start",
+      "title": "Quick Start",
+      "url": "public/quick-start/",
+      "degree": 3
+    },
+    {
+      "id": "themes",
+      "title": "Theme Overrides",
+      "url": "public/themes/",
+      "degree": 3
+    }
+  ],
+  "links": [
+    {
+      "source": "configuration",
+      "target": "themes"
+    },
+    {
+      "source": "deploying",
+      "target": "development"
+    },
+    {
+      "source": "development",
+      "target": "deploying"
+    },
+    {
+      "source": "frontmatter",
+      "target": "configuration"
+    },
+    {
+      "source": "index",
+      "target": "configuration"
+    },
+    {
+      "source": "index",
+      "target": "deploying"
+    },
+    {
+      "source": "index",
+      "target": "development"
+    },
+    {
+      "source": "index",
+      "target": "frontmatter"
+    },
+    {
+      "source": "index",
+      "target": "markdown"
+    },
+    {
+      "source": "index",
+      "target": "quick-start"
+    },
+    {
+      "source": "index",
+      "target": "themes"
+    },
+    {
+      "source": "markdown",
+      "target": "frontmatter"
+    },
+    {
+      "source": "quick-start",
+      "target": "configuration"
+    },
+    {
+      "source": "quick-start",
+      "target": "markdown"
+    },
+    {
+      "source": "themes",
+      "target": "deploying"
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+[
+  {
+    "title": "Configuration",
+    "url": "public/configuration/",
+    "path": "configuration.md",
+    "excerpt": "Configuration Configuration is optional. Without onyx.ini, Onyx builds every conventional content folder it finds, uses theme/ for overrides if present, and enables search, graph data, and source links. Example onyx.ini:...",
+    "headings": [
+      "Configuration",
+      "Supported keys",
+      "This site's configuration"
+    ]
+  },
+  {
+    "title": "Deploying",
+    "url": "public/deploying/",
+    "path": "deploying.md",
+    "excerpt": "Deploying Build locally, then publish the site root with GitHub Pages or any static file host. The generated files live in: text index.html public/ .nojekyll For GitHub Pages, commit those generated files on the branch P...",
+    "headings": [
+      "Deploying",
+      "Output safety",
+      "How this site ships"
+    ]
+  },
+  {
+    "title": "Development",
+    "url": "public/development/",
+    "path": "development.md",
+    "excerpt": "Development Onyx is deliberately boring Go. The local contract is the same one enforced by CI: sh files=\"$(gofmt -l $(git ls-files '.go'))\" test -z \"$files\" || { echo \"$files\"; exit 1; } go vet ./... go test ./... The pr...",
+    "headings": [
+      "Development",
+      "Rebuilding this site"
+    ]
+  },
+  {
+    "title": "Frontmatter",
+    "url": "public/frontmatter/",
+    "path": "frontmatter.md",
+    "excerpt": "Frontmatter Files may start with simple YAML-style frontmatter: markdown title: My Note publish: true Recognized fields: | Field | Effect | | --- | --- | | title | Sets the page title. Without it, Onyx uses the first # H...",
+    "headings": [
+      "Frontmatter"
+    ]
+  },
+  {
+    "title": "Onyx",
+    "url": "",
+    "path": "index.md",
+    "excerpt": "Onyx is a tiny static-site generator for Markdown note folders. Point it at a folder of notes — an Obsidian-style vault, a docs/ directory, a pile of wiki/ pages — and it writes a clean, fast, linkable website. No da...",
+    "headings": [
+      "Why Onyx",
+      "How it works",
+      "Explore the docs"
+    ]
+  },
+  {
+    "title": "Markdown Support",
+    "url": "public/markdown/",
+    "path": "markdown.md",
+    "excerpt": "Markdown Support Onyx intentionally supports a practical subset of Markdown instead of trying to be a full CommonMark implementation. The supported surface includes: headings, paragraphs, horizontal rules, blockquotes, a...",
+    "headings": [
+      "Markdown Support",
+      "Wikilinks",
+      "Math",
+      "Safety"
+    ]
+  },
+  {
+    "title": "Quick Start",
+    "url": "public/quick-start/",
+    "path": "quick-start.md",
+    "excerpt": "Quick Start From the root of a site that contains docs/, wiki/, plans/, or another recognized content folder: sh go run onyx.jwd.me/onyx@latest Or point Onyx at a site from anywhere: sh go run onyx.jwd.me/onyx@latest pat...",
+    "headings": [
+      "Quick Start",
+      "What Onyx builds"
+    ]
+  },
+  {
+    "title": "Theme Overrides",
+    "url": "public/themes/",
+    "path": "themes.md",
+    "excerpt": "Theme Overrides Onyx ships with an embedded default theme. A site can override any of these files inside its configured theme folder: text theme/ style.css # copied to public/onyx.css onyx.js # copied to public/onyx.js p...",
+    "headings": [
+      "Theme Overrides",
+      "How this site uses a theme"
+    ]
+  }
+]
