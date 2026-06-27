@@ -179,8 +179,8 @@ down.
    and `ensureNoJekyll`'s create-vs-skip. Closes the one coverage gap that protects against
    data loss. Do this first; it is independently useful and cheap.
 
-   *Done 2026-06-27*, in current working-tree changes:
-   - `onyx/onyx_test.go`: added `TestDestructiveOutputGuards`, covering marked
+   *Done 2026-06-27*, in commit `1a96c0a`:
+   - Added `TestDestructiveOutputGuards` in `onyx/onyx_test.go`, covering marked
      `public/` replacement, refusal to treat a file at `public` as a generated output
      directory, `.nojekyll` creation, and preservation of an existing `.nojekyll`.
 
@@ -194,10 +194,37 @@ down.
    resolution share one implementation, leaving the wikilink/Markdown dispatch in place.
    Refactor against the existing resolver tests; add none unless a gap appears.
 
+   *Done 2026-06-27*, in current working-tree changes:
+   - `onyx/links.go`: added generic `lookupRelativeTarget` and routed `resolveNote`
+     and `resolveAsset` through it, preserving their separate warning messages and
+     leaving Markdown-link dispatch unchanged.
+
+   Result: focused resolver/link tests pass with
+   `go test -count=1 ./... -run 'TestResolve|TestRenderWiki|TestRenderInline'`.
+   Full local checks also pass: `gofmt -l $(git ls-files '*.go')`, `go vet ./...`,
+   and `go test -count=1 ./... -coverprofile=/tmp/onyx-cover-next-step.out`.
+   Overall statement coverage is 92.2%; `lookupRelativeTarget` is 100% covered,
+   `resolveNote` remains 100%, and `resolveAsset` is 90.9%. No behavior changed.
+
 3. **Fold `countPages` into the build result (smaller friction).** When `build.go` is
    next touched, have `buildSite`/`writePages` return the page count instead of re-walking
    `public/`, removing the redundant walk and the second source of truth. Trivial,
    behavior-preserving.
+
+   *Done 2026-06-27*, in current working-tree changes:
+   - `onyx/build.go`: added `buildResult` so `buildSite` returns warnings plus the
+     generated page count.
+   - `onyx/page.go`: changed `writePages` to count successfully written pages.
+   - `onyx/onyx.go`: removed the `countPages` `public/` walk and prints the count from
+     the build result instead.
+   - `onyx/onyx_test.go`: pinned CLI counts for excluded notes and generated-home builds.
+
+   Result: focused build-count tests pass with
+   `go test -count=1 ./... -run 'TestBuildExcludesDraftAndPublishFalse|TestBuildReplacesBlankRootIndexWithGeneratedHome|TestBuildRendersHomepageWikilinksAndBacklinks'`.
+   Full local checks also pass: `gofmt -l $(git ls-files '*.go')`, `go vet ./...`, and
+   `go test -count=1 ./... -coverprofile=/tmp/onyx-cover-count.out`. Overall statement
+   coverage remains 92.2%; `buildSite` is 69.6%, `writePages` is 80.0%, and `runErr` is
+   83.3%. No behavior changed.
 
 4. **When the renderer is next edited, make escaping structural (Risk 1).** Introduce a
    tiny escaped-attribute (and/or escaped-text) writer and route the inline/wiki/heading

@@ -45,33 +45,25 @@ func (r *MarkdownRenderer) resolveNote(target string) *Page {
 		return r.current
 	}
 
-	for _, key := range relativeCandidates(path.Dir(r.current.PageRel), target) {
-		if page := r.vault.ByPath[key]; page != nil {
-			return page
-		}
+	page, ok, ambiguous := lookupRelativeTarget(
+		target,
+		path.Dir(r.current.PageRel),
+		func(key string) (*Page, bool) {
+			page := r.vault.ByPath[key]
+			return page, page != nil
+		},
+		r.vault.ByBase,
+		func(page *Page) string {
+			return path.Dir(page.PageRel)
+		},
+	)
+	if ambiguous {
+		r.warn("ambiguous wikilink [[" + target + "]]")
 	}
-
-	if strings.Contains(target, "/") {
+	if !ok {
 		return nil
 	}
-
-	matches := r.vault.ByBase[strings.ToLower(target)]
-	if len(matches) == 0 {
-		return nil
-	}
-	if len(matches) == 1 {
-		return matches[0]
-	}
-
-	folders := make([]string, len(matches))
-	for i, page := range matches {
-		folders[i] = path.Dir(page.PageRel)
-	}
-	if idx, ok := nearestByFolder(path.Dir(r.current.PageRel), folders); ok {
-		return matches[idx]
-	}
-	r.warn("ambiguous wikilink [[" + target + "]]")
-	return nil
+	return page
 }
 
 // relativeCandidates returns the ordered lookup keys for target as seen from
@@ -89,6 +81,45 @@ func relativeCandidates(baseDir, target string) []string {
 
 func indexKey(p string) string {
 	return strings.ToLower(path.Clean(p))
+}
+
+// lookupRelativeTarget returns a match, whether it matched, and whether the
+// basename fallback found multiple equally-near matches.
+func lookupRelativeTarget[T any](
+	target string,
+	currentDir string,
+	exact func(string) (T, bool),
+	byBase map[string][]T,
+	folderOf func(T) string,
+) (T, bool, bool) {
+	var zero T
+
+	for _, key := range relativeCandidates(currentDir, target) {
+		if match, ok := exact(key); ok {
+			return match, true, false
+		}
+	}
+
+	if strings.Contains(target, "/") {
+		return zero, false, false
+	}
+
+	matches := byBase[strings.ToLower(path.Base(target))]
+	if len(matches) == 0 {
+		return zero, false, false
+	}
+	if len(matches) == 1 {
+		return matches[0], true, false
+	}
+
+	folders := make([]string, len(matches))
+	for i, match := range matches {
+		folders[i] = folderOf(match)
+	}
+	if idx, ok := nearestByFolder(currentDir, folders); ok {
+		return matches[idx], true, false
+	}
+	return zero, false, true
 }
 
 // nearestByFolder picks the single match whose folder is closest to currentDir
@@ -145,30 +176,22 @@ func (r *MarkdownRenderer) resolveAsset(target string) (string, bool) {
 	}
 	target = strings.TrimPrefix(path.Clean(target), "./")
 
-	for _, key := range relativeCandidates(path.Dir(r.current.SourceRel), target) {
-		if rel, ok := r.vault.AssetsByPath[key]; ok {
-			return rel, true
-		}
-	}
-	if strings.Contains(target, "/") {
-		return "", false
-	}
-
-	matches := r.vault.AssetsByBase[strings.ToLower(path.Base(target))]
-	if len(matches) == 1 {
-		return matches[0], true
-	}
-	if len(matches) > 1 {
-		folders := make([]string, len(matches))
-		for i, rel := range matches {
-			folders[i] = path.Dir(rel)
-		}
-		if idx, ok := nearestByFolder(path.Dir(r.current.SourceRel), folders); ok {
-			return matches[idx], true
-		}
+	rel, ok, ambiguous := lookupRelativeTarget(
+		target,
+		path.Dir(r.current.SourceRel),
+		func(key string) (string, bool) {
+			rel, ok := r.vault.AssetsByPath[key]
+			return rel, ok
+		},
+		r.vault.AssetsByBase,
+		func(rel string) string {
+			return path.Dir(rel)
+		},
+	)
+	if ambiguous {
 		r.warn("ambiguous asset [[" + target + "]]")
 	}
-	return "", false
+	return rel, ok
 }
 
 func (r *MarkdownRenderer) resolveMarkdownHref(dest string) string {

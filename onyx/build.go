@@ -25,42 +25,48 @@ import (
 //
 // Reordering these (for example assigning URLs after rendering, or computing
 // backlinks before rendering) breaks the Page lifecycle the later stages rely on.
-func buildSite(cfg Config) ([]string, error) {
+type buildResult struct {
+	Warnings []string
+	Pages    int
+}
+
+func buildSite(cfg Config) (buildResult, error) {
 	if err := ensureRootIndexWritable(filepath.Join(cfg.Root, "index.html")); err != nil {
-		return nil, err
+		return buildResult{}, err
 	}
 	if err := ensureNoJekyll(cfg.Root); err != nil {
-		return nil, err
+		return buildResult{}, err
 	}
 
 	vault, warnings, err := loadVault(cfg)
 	if err != nil {
-		return warnings, err
+		return buildResult{Warnings: warnings}, err
 	}
 	renderVault(vault, &warnings)
 	computeBacklinks(vault)
 
 	if err := preparePublic(filepath.Join(cfg.Root, "public")); err != nil {
-		return warnings, err
+		return buildResult{Warnings: warnings}, err
 	}
 	if err := writeAssets(vault); err != nil {
-		return warnings, err
+		return buildResult{Warnings: warnings}, err
 	}
-	if err := writePages(vault); err != nil {
-		return warnings, err
+	pages, err := writePages(vault)
+	if err != nil {
+		return buildResult{Warnings: warnings}, err
 	}
 	if cfg.Search {
 		if err := writeSearchIndex(vault); err != nil {
-			return warnings, err
+			return buildResult{Warnings: warnings}, err
 		}
 	}
 	if cfg.Graph {
 		if err := writeGraph(vault); err != nil {
-			return warnings, err
+			return buildResult{Warnings: warnings}, err
 		}
 	}
 
-	return warnings, nil
+	return buildResult{Warnings: warnings, Pages: pages}, nil
 }
 
 func ensureRootIndexWritable(filename string) error {

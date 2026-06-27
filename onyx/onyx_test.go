@@ -78,6 +78,9 @@ func TestBuildExcludesDraftAndPublishFalse(t *testing.T) {
 	if code := run([]string{root}, &stdout, &stderr); code != 0 {
 		t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
 	}
+	if !strings.Contains(stdout.String(), "Onyx built 2 pages") {
+		t.Fatalf("stdout page count = %q, want 2 built pages", stdout.String())
+	}
 
 	if _, err := os.Stat(filepath.Join(root, "public", "Draft", "index.html")); !os.IsNotExist(err) {
 		t.Fatalf("draft page was generated, err=%v", err)
@@ -173,6 +176,9 @@ func TestBuildReplacesBlankRootIndexWithGeneratedHome(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{root}, &stdout, &stderr); code != 0 {
 		t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Onyx built 3 pages") {
+		t.Fatalf("stdout page count = %q, want 3 built pages", stdout.String())
 	}
 
 	index := readTestFile(t, root, "index.html")

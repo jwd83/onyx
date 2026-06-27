@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -45,27 +44,13 @@ func runErr(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	warnings, err := buildSite(cfg)
+	result, err := buildSite(cfg)
 	if err != nil {
 		return err
 	}
-	for _, warning := range warnings {
+	for _, warning := range result.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
-	fmt.Fprintf(stdout, "Onyx built %d pages into %s\n", countPages(cfg.Root), filepath.Join(cfg.Root, "public"))
+	fmt.Fprintf(stdout, "Onyx built %d pages into %s\n", result.Pages, filepath.Join(cfg.Root, "public"))
 	return nil
-}
-
-func countPages(root string) int {
-	count := 0
-	_ = filepath.WalkDir(filepath.Join(root, "public"), func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "index.html" {
-			count++
-		}
-		return nil
-	})
-	if _, err := os.Stat(filepath.Join(root, "index.html")); err == nil {
-		count++
-	}
-	return count
 }

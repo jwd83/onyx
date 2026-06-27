@@ -37,10 +37,10 @@ type SiteView struct {
 	Title string
 }
 
-func writePages(vault *Vault) error {
+func writePages(vault *Vault) (int, error) {
 	pageTemplate, err := loadTemplateSource(vault, "page.html", defaultPageTemplate)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	// The home page renders through the theme's home.html when present, otherwise
 	// it falls back to defaultPageTemplate — the embedded default page template,
@@ -49,19 +49,21 @@ func writePages(vault *Vault) error {
 	// page.html does not silently restyle the home page.
 	homeTemplate, err := loadTemplateSource(vault, "home.html", defaultPageTemplate)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
+	written := 0
 	for _, page := range vault.Notes {
 		tpl := pageTemplate
 		if page.IsHome {
 			tpl = homeTemplate
 		}
 		if err := writePage(vault, page, tpl); err != nil {
-			return err
+			return written, err
 		}
+		written++
 	}
-	return nil
+	return written, nil
 }
 
 type templateSource struct {
