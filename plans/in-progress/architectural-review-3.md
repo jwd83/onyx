@@ -194,7 +194,7 @@ down.
    resolution share one implementation, leaving the wikilink/Markdown dispatch in place.
    Refactor against the existing resolver tests; add none unless a gap appears.
 
-   *Done 2026-06-27*, in current working-tree changes:
+   *Done 2026-06-27*, in commit `84dcf73`:
    - `onyx/links.go`: added generic `lookupRelativeTarget` and routed `resolveNote`
      and `resolveAsset` through it, preserving their separate warning messages and
      leaving Markdown-link dispatch unchanged.
@@ -211,7 +211,7 @@ down.
    `public/`, removing the redundant walk and the second source of truth. Trivial,
    behavior-preserving.
 
-   *Done 2026-06-27*, in current working-tree changes:
+   *Done 2026-06-27*, in commit `84dcf73`:
    - `onyx/build.go`: added `buildResult` so `buildSite` returns warnings plus the
      generated page count.
    - `onyx/page.go`: changed `writePages` to count successfully written pages.
@@ -240,6 +240,14 @@ down.
 
 6. **Add cross-reference comments to the dual vanity-import HTML files.** One line in each
    noting the other must stay in sync if the module path changes. Documentation only.
+
+   *Done 2026-06-27*, in current working-tree changes:
+   - `index.html`: added a comment tying its vanity-import tags to `onyx/index.html`.
+   - `onyx/index.html`: added the reciprocal comment tying its vanity-import tags to
+     `../index.html`.
+
+   Result: `git diff --check` and `go test -count=1 ./...` pass. No generated output
+   or Go behavior changed.
 
 ## Closing assessment
 
