@@ -1,9 +1,16 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func renderTestMarkdown(markdown string) RenderResult {
+	v := testVault(Config{}, []string{"index.md"}, nil)
+	r, _ := testRenderer(v, "index.md")
+	return r.Render(markdown)
+}
 
 func TestRenderInline(t *testing.T) {
 	v := testVault(Config{}, []string{"index.md"}, nil)
@@ -77,4 +84,71 @@ func TestRenderInlineWikilinks(t *testing.T) {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
+}
+
+func TestRenderBlocks(t *testing.T) {
+	cases := []struct {
+		name     string
+		markdown string
+		want     string
+	}{
+		{
+			name:     "blockquote with nested paragraph and list",
+			markdown: "> Quote **bold**\n>\n> - item",
+			want: "<blockquote>\n" +
+				"<p>Quote <strong>bold</strong></p>\n" +
+				"<ul>\n" +
+				"<li>item</li>\n" +
+				"</ul>\n" +
+				"</blockquote>\n",
+		},
+		{
+			name:     "callout uses title and renders body blocks",
+			markdown: "> [!note] Heads up\n> Remember **this**.\n>\n> 1. Step",
+			want: `<aside class="callout callout-note"><p class="callout-title">Heads up</p>` + "\n" +
+				"<p>Remember <strong>this</strong>.</p>\n" +
+				"<ol>\n" +
+				"<li>Step</li>\n" +
+				"</ol>\n" +
+				"</aside>\n",
+		},
+		{
+			name:     "task list checkboxes and plain items",
+			markdown: "- [ ] Todo **one**\n- [x] Done <two>\n+ plain",
+			want: "<ul>\n" +
+				`<li><input type="checkbox" disabled> Todo <strong>one</strong></li>` + "\n" +
+				`<li><input type="checkbox" disabled checked> Done &lt;two&gt;</li>` + "\n" +
+				"<li>plain</li>\n" +
+				"</ul>\n",
+		},
+		{
+			name:     "fenced code sanitizes info string class",
+			markdown: "```go<script> extra\nfmt.Println(\"<x>\")\n```",
+			want:     `<pre><code class="language-goscript">fmt.Println(&#34;&lt;x&gt;&#34;)</code></pre>` + "\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderTestMarkdown(tc.markdown).HTML; got != tc.want {
+				t.Errorf("Render(%q).HTML =\n%s\nwant\n%s", tc.markdown, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderBlocksHeadingIDsAndHorizontalRule(t *testing.T) {
+	got := renderTestMarkdown("# Same\n---\n# Same")
+
+	wantHTML := `<h1 id="same">Same</h1>` + "\n" +
+		"<hr>\n" +
+		`<h1 id="same-2">Same</h1>` + "\n"
+	if got.HTML != wantHTML {
+		t.Errorf("HTML =\n%s\nwant\n%s", got.HTML, wantHTML)
+	}
+
+	wantHeadings := []string{"Same", "Same"}
+	if !reflect.DeepEqual(got.Headings, wantHeadings) {
+		t.Errorf("Headings = %v, want %v", got.Headings, wantHeadings)
+	}
 }

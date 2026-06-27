@@ -8,26 +8,23 @@ presented as a 3,141-line monolith. The source is now split across focused files
 the built-in theme lives as real embedded assets, the link/asset resolver paths
 share mechanics, and the highest-risk inline/link/config surfaces have direct
 tests. The dominant carrying cost has shifted from "too much in one file" to a
-smaller, sharper set of risks: block-level Markdown behavior, theme/static
-override behavior, and the still-manual HTML safety model needs continued
-regression coverage. The related earlier reviews remain in
-`plans/in-progress/architectural-review-glm.md` and
-`plans/in-progress/architectural-review-opus.md`; this file is the refreshed
-current assessment.
+smaller, sharper set of risks: generated-output behavior, theme/static override
+behavior, and the still-manual HTML safety model need continued regression
+coverage. This file is now the single active architectural review artifact.
 
 ## Snapshot
 
 | Metric | Value |
 | --- | --- |
-| Repository shape | 28 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; three in-progress review artifacts |
+| Repository shape | 26 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; one active review artifact |
 | Go module | `onyx.jwd.me`; `go 1.21`; tested with `go1.26.3 darwin/arm64` |
 | Third-party dependencies | **0**; no `go.sum`; imports are stdlib-only |
 | Source footprint | 11 non-test Go files, 2,385 lines; largest: `markdown.go` 757, `vault.go` 412, `links.go` 272, `config.go` 265; `onyx.go` is now 71 lines |
-| Test footprint | 4 Go test files, 806 lines, 17 `Test*` functions |
+| Test footprint | 4 Go test files, 880 lines, 19 `Test*` functions |
 | Embedded default theme | 921 real asset lines under `onyx/theme/default/`, embedded through `theme.go`: CSS 427, JS 419, page template 75 |
 | Documentation | `README.md` 83 lines; active review refresh at this file |
 | Formatting/static checks | `gofmt -l $(rg --files -g '*.go')` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes in 0.310s; coverage is 75.7% of statements |
+| Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes in 0.240s; coverage is 84.0% of statements |
 
 Interpretation: the earlier structural campaign paid off. Since the previous
 `73c2b90` review baseline, the repo lowered the Go directive (`4eff5ff`), split
@@ -35,11 +32,12 @@ the former monolith across subsystem files (`afef272`), extracted the theme into
 real embedded files (`bac7313` and `32b0573`), added 487 lines of parser and
 resolver tests (`12bd59a`), consolidated resolver mechanics (`4da549c`), and
 documented the load-bearing build order (`47518fb`). Function coverage confirms
-the improvement where it mattered most: `renderInline` is now 85.7% covered,
-`parseINI` and `sanitizeHref` are 100%, and the link/asset resolvers are mostly
-95-100%. The remaining weak spots are concentrated and visible: `renderBlocks`
-47.4%, `renderBlockquote` 0%, `renderListItem` 0%, `sanitizeClass` 0%,
-`copyDir` 0%, `isBlankFile` 0%, `updateGeneratedHome` 18.8%, and `boolOr` 50%.
+the improvement where it mattered most: `renderInline` is 85.7% covered,
+`renderBlocks` is 93.8%, `renderBlockquote` is 95.7%,
+`renderListItem` is 100%, `parseINI` and `sanitizeHref` are 100%, and the
+link/asset resolvers are mostly 95-100%. The remaining weak spots are
+concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
+`updateGeneratedHome` 18.8%, `boolOr` 50%, and `extractTags` 58.3%.
 
 ## Structurally sound elements
 
@@ -64,6 +62,9 @@ the improvement where it mattered most: `renderInline` is now 85.7% covered,
   strong/emphasis/code escaping, bare URLs, Markdown links, wikilinks, aliases,
   headings, broken links, and image embeds. It also deliberately pins known
   behavior gaps such as single-underscore emphasis and loose asterisk pairing.
+- **Block-level Markdown behavior is now pinned.** `onyx/markdown_test.go`
+  covers blockquotes, callouts, task-list checkboxes, fenced-code class
+  sanitization, horizontal rules, duplicate heading IDs, and heading collection.
 - **Generated-output safety and relative URLs remain load-bearing tests.**
   Integration tests still assert refusal to overwrite an unmarked `public/`
   directory, creation of `.nojekyll`, relative `public/onyx.css` and
@@ -75,21 +76,22 @@ the improvement where it mattered most: `renderInline` is now 85.7% covered,
 
 ## Structural risks and costs
 
-1. **The remaining test gap is now block/output behavior, not inline/link behavior.**
-   *Evidence:* Function coverage shows `renderBlockquote`, `renderListItem`,
-   `stripBlockquoteMarker`, `dropFirstNonBlank`, `sanitizeClass`, `copyDir`, and
-   `isBlankFile` at 0%. `renderBlocks` is only 47.4%, while `updateGeneratedHome`
-   is 18.8%. The existing integration tests cover math and tables, but not
-   callouts, blockquotes, task-list rendering, code-fence class sanitization,
-   generated single-source home output, or theme static copying.
-   *Consequence:* the most likely future regressions have moved to block-level
-   Markdown and output/theme edge cases. A change to callout rendering, task
-   checkboxes, fenced code classes, generated indexes, or theme overrides could
-   slip through even though the headline coverage number now looks healthy.
-   *Fix direction:* add focused `Render` table tests for blockquotes/callouts,
-   task lists, fenced code info strings, horizontal rules, generated-home HTML,
-   and duplicate heading IDs. Add build-level tests for custom theme overrides,
-   `theme/static` copying, and blank root `index.html` handling.
+1. **The remaining test gap is now output/theme behavior, not Markdown parsing.**
+   *Evidence:* Function coverage now exercises the block renderer directly:
+   `renderBlocks` is 93.8%, `renderBlockquote` is 95.7%,
+   `stripBlockquoteMarker`, `listMarker`, and `renderListItem` are 100%, and
+   `sanitizeClass` is 88.9%. The low-coverage areas have moved to filesystem and
+   generated-output paths: `copyDir` 0%, `isBlankFile` 0%, and
+   `updateGeneratedHome` 18.8%. The existing integration tests still do not
+   cover custom theme overrides, `theme/static` copying, blank root `index.html`
+   replacement, or generated single-source home output.
+   *Consequence:* the most likely future regressions now sit at the boundary
+   where Onyx writes files or honors user theme/config choices. A change to
+   theme override lookup, static asset copying, blank-file safety, or generated
+   home pages could slip through even though parser coverage is healthy.
+   *Fix direction:* add build-level tests for custom theme overrides,
+   `theme/static` copying, blank root `index.html` handling, and generated
+   single-source home output.
 
 2. **The HTML/href safety model is still manual, but dangerous schemes are now centralized.**
    *Evidence:* Markdown output is constructed by hand and then stored as
@@ -157,34 +159,31 @@ the improvement where it mattered most: `renderInline` is now 85.7% covered,
 - `isBlankFile` still has an untested UTF-16LE blank-file branch
   (`onyx/build.go:96-103`). Either test it or remove it if the behavior is not
   intentional.
-- The repo now has three in-progress review files and no canonical
-  `plans/in-progress/architectural-review.md`. That is fine for comparison, but
-  a future cleanup should pick one active review or archive the older variants.
+- `plans/in-progress/architectural-review-gpt5.5.md` is the only active review
+  artifact now. Consider renaming it to a model-neutral
+  `architectural-review.md` if the review will remain the canonical plan.
 - There is no CI/workflow file. For a project this small, a basic `go test`,
   `go vet`, and `gofmt -l` workflow would give high confidence with low upkeep.
 
 ## Recommended order of attack
 
-1. **Finish the current test net around uncovered block/output behavior.** Add
-   focused tests for callouts, blockquotes, task-list items, fenced code class
-   sanitization, generated home output, `isBlankFile`, and `theme/static`
-   copying. This is the direct successor to the old parser/resolver test step.
-2. **Add a custom-theme integration test.** Exercise `style.css`, `onyx.js`,
-   `page.html`/`home.html`, and copied static files so the new `go:embed` asset
-   layout stays trustworthy.
-3. **Hoist the regexps and clean the small hot spots.** Move the three per-call
+1. **Finish the current test net around output/theme behavior.** Add build-level
+   tests for custom `style.css`, `onyx.js`, `page.html`/`home.html`, copied
+   `theme/static` files, blank root `index.html` handling, generated single-source
+   home output, and `isBlankFile`.
+2. **Hoist the regexps and clean the small hot spots.** Move the three per-call
    regexps to package vars; either test or simplify the UTF-16 blank-file branch;
    keep `countPages` as success-message-only code.
-4. **Clarify the config compatibility contract.** Remove stale `base_url`
+3. **Clarify the config compatibility contract.** Remove stale `base_url`
    fixtures, decide whether legacy keys are supported, and document/test that
    decision.
-5. **Document contributor guardrails.** Add a short README development note or
+4. **Document contributor guardrails.** Add a short README development note or
    lightweight CI workflow covering `go test ./...`, `go vet ./...`, `gofmt -l`,
    zero third-party dependencies, relative URL behavior, and generated-output
    safety.
-6. **Archive or consolidate review artifacts when this campaign is done.** Keep
-   comparison reviews while useful, but do not let old model-specific reviews
-   become competing active plans.
+5. **Rename or complete the active review artifact when this campaign is done.**
+   If this remains the canonical review, use a model-neutral filename; otherwise
+   move it through the completed-plan lifecycle.
 
 ## Closing assessment
 
