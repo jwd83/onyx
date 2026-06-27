@@ -69,6 +69,11 @@ toggles), but it is not required. The `source` key takes one folder or a
 comma-separated list (`source = docs, wiki`) to choose exactly which folders to
 build; a single value builds as-is, several build a sectioned site.
 
+Unknown `onyx.ini` keys are ignored so older config files continue to build.
+Legacy toggle aliases (`build.search`, `build.graph`, and
+`publish_raw_markdown`) are still accepted, with the modern keys above taking
+precedence when both a modern key and a dotted alias are present.
+
 ## Deploying to GitHub Pages
 
 Generated links are relative, so the site works from a project URL such as
@@ -79,5 +84,16 @@ repo.
 ## Development
 
 ```sh
+gofmt -l $(find . -name '*.go')
+go vet ./...
 go test ./...
 ```
+
+`gofmt -l` should print no files. Onyx is intentionally stdlib-only: keep
+`go.mod` free of third-party requirements unless the no-dependency contract is
+being changed deliberately.
+
+When changing generated output, keep asset and page links relative so GitHub
+Pages project URLs continue to work. Preserve the conservative overwrite guard
+for `public/`, the `.nojekyll` output, and the generated-file markers; update
+the integration tests when those behaviors change.

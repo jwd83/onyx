@@ -10,7 +10,7 @@ import (
 
 func TestBuildRendersHomepageWikilinksAndBacklinks(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
 	writeTestFile(t, root, "docs/index.md", "---\ntitle: Home\n---\nWelcome to [[Foo|the foo note]].\n")
 	writeTestFile(t, root, "docs/Foo.md", "# Foo\n\nBack home: [[index|Home]].\n")
 
@@ -47,7 +47,7 @@ func TestBuildRendersHomepageWikilinksAndBacklinks(t *testing.T) {
 
 func TestBuildResolvesSlashWikilinksRelativeToCurrentFolder(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
 	writeTestFile(t, root, "docs/index.md", "# Home\n\n[[Games/Baldur's Gate]]\n")
 	writeTestFile(t, root, "docs/Games/Baldur's Gate.md", "# Baldur's Gate\n\n[[Baldur's Gate 3/Astarion Build]]\n")
 	writeTestFile(t, root, "docs/Games/Baldur's Gate 3/Astarion Build.md", "# Astarion Build\n")
@@ -68,7 +68,7 @@ func TestBuildResolvesSlashWikilinksRelativeToCurrentFolder(t *testing.T) {
 
 func TestBuildExcludesDraftAndPublishFalse(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
 	writeTestFile(t, root, "docs/index.md", "# Home\n\n[[Draft]] [[Private]] [[Public]]\n")
 	writeTestFile(t, root, "docs/Draft.md", "---\ndraft: true\n---\n# Draft\n")
 	writeTestFile(t, root, "docs/Private.md", "---\npublish: false\n---\n# Private\n")
@@ -93,7 +93,7 @@ func TestBuildExcludesDraftAndPublishFalse(t *testing.T) {
 
 func TestBuildRefusesUnmarkedPublicDirectory(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
 	writeTestFile(t, root, "docs/index.md", "# Home\n")
 	writeTestFile(t, root, "public/handmade.txt", "do not delete me\n")
 
@@ -214,7 +214,7 @@ func TestBuildUsesCustomThemeAndCopiesStaticAssets(t *testing.T) {
 
 func TestBuildRendersMathBlocksAndCompactTables(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
 	writeTestFile(t, root, "docs/index.md", "# Home\n\n[[BMI]]\n")
 	writeTestFile(t, root, "docs/BMI.md", strings.Join([]string{
 		"Formula below.",

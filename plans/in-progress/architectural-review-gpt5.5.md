@@ -142,19 +142,19 @@ visible: `boolOr` 50% and `extractTags` 58.3%.
    output-path work arrives, introduce a narrow page-view constructor or helper
    around the `writePage` copy instead of a broad builder framework.
 
-5. **The public config contract still has drift signals.**
+5. **The public config contract is now explicit, but should stay small.**
    *Evidence:* README documents `site_title`, `source`, `theme`, `search`,
-   `graph`, and `show_source`. The implementation also accepts `build.search`,
-   `build.graph`, and `publish_raw_markdown` (`onyx/config.go:111-113`), while
-   several integration fixtures still include ignored `base_url = /` keys.
-   Unknown keys are tolerated.
-   *Consequence:* this is not a current bug, but it leaves the true compatibility
-   contract fuzzy. Future config edits may accidentally preserve, remove, or
-   document legacy keys without an explicit decision.
-   *Fix direction:* remove stale `base_url` fixture lines, add config tests for
-   legacy toggles or deliberately drop/document them, and add a short README
-   development note saying unknown keys are tolerated intentionally if that is
-   the chosen contract.
+   `graph`, and `show_source`, and now states that unknown keys are ignored.
+   `onyx/config_test.go` pins the legacy aliases `build.search`,
+   `build.graph`, and `publish_raw_markdown`, including modern-key precedence
+   when both forms are present. Stale integration fixtures no longer include
+   ignored `base_url = /` lines.
+   *Consequence:* future config edits have a clearer compatibility target. The
+   remaining tradeoff is intentional: tolerating unknown keys keeps old configs
+   building, but it also means misspelled keys do not fail loudly.
+   *Fix direction:* keep the current small key set unless product needs force an
+   expansion. Add direct config tests for any new key or alias before changing
+   README guidance.
 
 ### Smaller frictions
 
@@ -166,21 +166,20 @@ visible: `boolOr` 50% and `extractTags` 58.3%.
 - `plans/in-progress/architectural-review-gpt5.5.md` is the only active review
   artifact now. Consider renaming it to a model-neutral
   `architectural-review.md` if the review will remain the canonical plan.
-- There is no CI/workflow file. For a project this small, a basic `go test`,
-  `go vet`, and `gofmt -l` workflow would give high confidence with low upkeep.
+- The README now documents the local contributor guardrails: `gofmt -l`,
+  `go vet`, `go test`, the zero-dependency contract, relative generated URLs,
+  and conservative generated-output safety. There is still no CI/workflow file,
+  so automated PR checks remain an optional follow-up if repository activity
+  makes them useful.
 
 ## Recommended order of attack
 
-1. **Clarify the config compatibility contract.** Remove stale `base_url`
-   fixtures, decide whether legacy keys are supported, and document/test that
-   decision.
-2. **Document contributor guardrails.** Add a short README development note or
-   lightweight CI workflow covering `go test ./...`, `go vet ./...`, `gofmt -l`,
-   zero third-party dependencies, relative URL behavior, and generated-output
-   safety.
-3. **Rename or complete the active review artifact when this campaign is done.**
+1. **Rename or complete the active review artifact when this campaign is done.**
    If this remains the canonical review, use a model-neutral filename; otherwise
    move it through the completed-plan lifecycle.
+2. **Optionally add CI when automation is worth the upkeep.** A lightweight
+   workflow can mirror the README checks: `gofmt -l`, `go vet`, and
+   `go test ./...`.
 
 ## Closing assessment
 
