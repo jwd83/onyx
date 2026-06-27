@@ -241,7 +241,7 @@ down.
 6. **Add cross-reference comments to the dual vanity-import HTML files.** One line in each
    noting the other must stay in sync if the module path changes. Documentation only.
 
-   *Done 2026-06-27*, in current working-tree changes:
+   *Done 2026-06-27*, in commit `2ce8550`:
    - `index.html`: added a comment tying its vanity-import tags to `onyx/index.html`.
    - `onyx/index.html`: added the reciprocal comment tying its vanity-import tags to
      `../index.html`.
@@ -263,3 +263,7 @@ stdlib-only Go, one installed command, relative static output, conservative over
 safety, and a readable linear build pipeline. The two tempting overcorrections — swapping
 in a Markdown library or building a `Page`/template framework — would each cost more than
 they return; this project needs neither.
+
+With the autonomous steps complete and the remaining renderer/tag-extraction items
+deliberately deferred, this review is closed as historical guidance rather than active
+work.
