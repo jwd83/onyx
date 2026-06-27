@@ -1,6 +1,10 @@
 # Architectural Review — Onyx
 
-*Reviewed 2026-06-26 against `master` @ `6b3e4f8`.*
+*Reviewed 2026-06-26 against `master` @ `6b3e4f8`. Completed 2026-06-27 after the
+CI, config/source, renderer-regression, `extractTags`, and home-template fallback
+follow-ups (steps 1–5) were applied. Step 6 (the optional `markdown.go` cohesion
+split) is intentionally left incomplete — deferred until the file's size becomes a
+real friction.*
 
 Onyx is a zero-dependency, single-binary Go static-site generator that publishes a
 folder of Markdown notes (an Obsidian-style vault) as a static website. The prior
@@ -17,10 +21,11 @@ followed by small output-guard and metadata/template edges. A minimal CI workflo
 enforces the checks the README already documents, config/source-resolution edges
 are pinned with direct tests, and (2026-06-27) the previously under-covered renderer
 branches plus an attribute-injection regression are now pinned as well, as is
-`extractTags`' current behavior (including the harvest-from-code-fences wart). The
-remaining recommended step is the small template edge — making the default home/page
-template fallback explicit — then optional cohesion cleanups, with explicit restraint
-against rewriting the parser or adding dependencies.
+`extractTags`' current behavior (including the harvest-from-code-fences wart), and
+(2026-06-27) the default home/page template fallback is now explicit in code and
+pinned by a test. All five ranked risks are now characterized; what remains is the
+optional cohesion cleanup, with explicit restraint against rewriting the parser or
+adding dependencies.
 
 ## Snapshot
 
@@ -83,6 +88,17 @@ the wart: tags are harvested from the raw document with no fence awareness, so
 `#include`/`#define` inside a fenced code block become site tags. This moved
 `extractTags` 54.5%→100% and overall coverage 91.5%→91.9%. No behavior changed;
 whether to skip fenced code remains a separate, explicitly-authorized step.
+
+Progress update 2026-06-27: the home/page template fallback (Risk 5 / step 5) is
+now explicit. A comment at the `home.html` load site in `page.go` records that the
+fallback target is `defaultPageTemplate` — the embedded default — and *not*
+whatever `page.html` resolved to, so a custom `page.html` cannot silently restyle
+the home page. `TestDefaultHomeUsesPageTemplateFallback` pins both the no-override
+case (home and ordinary pages share the default page template) and the
+custom-`page.html`-without-`home.html` case (the home falls back to the default,
+not the custom page template). No behavior changed; these functions were already
+exercised by other integration tests, so this is a behavioral pin, not a coverage
+chase.
 
 ## Structurally sound elements
 
@@ -186,18 +202,21 @@ Ranked by ongoing development cost.
    *Fix direction:* keep the workflow in sync with the README's Development section if
    the project deliberately changes its local checks or dependency policy.
 
-5. **The default theme ships no `home.html`, so the home/page split is implicit.**
+5. **The default theme ships no `home.html` — the home/page fallback is now explicit
+   in code and pinned by a test.**
    *Evidence:* `writePages` loads `home.html` with `defaultPageTemplate` as its
-   fallback (`onyx/page.go:45`), but `onyx/theme/default/` contains only `page.html`,
+   fallback (`onyx/page.go`), but `onyx/theme/default/` contains only `page.html`,
    `style.css`, and `onyx.js`. So out of the box the generated home and ordinary pages
    render through the same template; the distinct `home.html` override the README
-   advertises only matters when a user supplies one.
-   *Consequence:* harmless today, but the "home uses `home.html`, falling back to the
-   page template" rule is undocumented in code and untested for the default (no
-   override) path. A future change to either template could diverge unnoticed.
-   *Fix direction:* add a one-line comment at the `home.html` load site recording the
-   fallback intent, and a small test asserting the default home renders via the page
-   template fallback. No behavior change.
+   advertises only matters when a user supplies one. As of 2026-06-27 a comment at the
+   load site records that the fallback targets the *default* page template (not a
+   custom `page.html`), and `TestDefaultHomeUsesPageTemplateFallback` pins both the
+   no-override case and the custom-`page.html`-but-no-`home.html` case.
+   *Consequence:* the previously undocumented, untested "home uses `home.html`, falling
+   back to the page template" rule can no longer diverge unnoticed; in particular a
+   regression that made the home inherit a custom `page.html` would now fail.
+   *Fix direction:* none needed; keep the test in sync if the fallback target ever
+   changes deliberately.
 
 ### Smaller frictions
 
@@ -231,22 +250,25 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
    code-block case, the way other known Markdown quirks are already pinned
    (`TestExtractTags`, 54.5%→100%). Whether to change it to skip fenced code remains a
    separate, explicitly-authorized decision. (Risk 3.)
-5. **Make the home/page template fallback explicit**: a comment at the `home.html`
-   load site and a test that the default (no-override) home renders via the page
-   template. (Risk 5.)
-6. **Optional cohesion cleanup**: if `markdown.go` keeps growing, split it along its
-   three existing seams (`markdown_block.go` / `markdown_inline.go` / text extraction)
-   and, when next touching link/image output, introduce the tiny shared
-   attribute-escaping helper from Risk 1. Do this only if it reduces real friction —
-   the file is still navigable today.
+5. **Done 2026-06-27: made the home/page template fallback explicit**: a comment at
+   the `home.html` load site recording that the fallback is the default template (not
+   a custom `page.html`), and `TestDefaultHomeUsesPageTemplateFallback` covering the
+   no-override and custom-`page.html`-without-`home.html` cases. (Risk 5.)
+6. **Not done — optional cohesion cleanup (deferred by design).** If `markdown.go`
+   keeps growing, split it along its three existing seams (`markdown_block.go` /
+   `markdown_inline.go` / text extraction) and, when next touching link/image output,
+   introduce the tiny shared attribute-escaping helper from Risk 1. Deliberately left
+   incomplete: do this only if it reduces real friction — the file is still navigable
+   today, so there is no trigger to act on yet.
 
 ## Closing assessment
 
 The dominant risk is no longer structure; it is the hand-rolled renderer's
 manually-enforced escaping discipline plus a few small, visible metadata/template
-edges. With CI, config/source, renderer, and `extractTags` tests now in place, the
-best next leverage is the single remaining home-template fallback item (step 5).
-Expected payoff is disproportionate to effort — the code is already good, so
+edges. With CI, config/source, renderer, `extractTags`, and home-template fallback
+tests now all in place, every ranked risk is characterized and only the optional
+cohesion cleanup (step 6) remains — to be taken up only if `markdown.go` keeps
+growing. Expected payoff is disproportionate to effort — the code is already good, so
 a small finishing pass buys durable confidence. Above all, preserve the restraint that makes Onyx good:
 stdlib-only Go, one installed command, relative static output, conservative overwrite
 safety, and a readable linear build pipeline. Resist the two tempting overcorrections —

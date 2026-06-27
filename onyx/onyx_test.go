@@ -212,6 +212,64 @@ func TestBuildUsesCustomThemeAndCopiesStaticAssets(t *testing.T) {
 	}
 }
 
+// TestDefaultHomeUsesPageTemplateFallback pins the home/page template fallback
+// that writePages relies on: with no home.html override the home renders through
+// the embedded default page template, the same template ordinary pages use, and
+// that fallback targets the *default* template rather than a custom page.html.
+// See the comment at the home.html load site in page.go.
+func TestDefaultHomeUsesPageTemplateFallback(t *testing.T) {
+	// The default theme structure is the tell that defaultPageTemplate rendered a
+	// page; it appears in onyx/theme/default/page.html and nowhere a custom
+	// template below uses it.
+	const defaultThemeMarker = `class="onyx-shell"`
+
+	t.Run("no overrides: home and pages share the default page template", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
+		writeTestFile(t, root, "docs/index.md", "---\ntitle: Home\n---\n# Home\n\n[[Foo]]\n")
+		writeTestFile(t, root, "docs/Foo.md", "# Foo\n")
+
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{root}, &stdout, &stderr); code != 0 {
+			t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+		}
+
+		index := readTestFile(t, root, "index.html")
+		if !strings.Contains(index, defaultThemeMarker) {
+			t.Fatalf("home did not render via the default page template:\n%s", index)
+		}
+		page := readTestFile(t, root, "public/Foo/index.html")
+		if !strings.Contains(page, defaultThemeMarker) {
+			t.Fatalf("ordinary page did not render via the default page template:\n%s", page)
+		}
+	})
+
+	t.Run("custom page.html, no home.html: home still falls back to the default", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
+		writeTestFile(t, root, "docs/index.md", "# Home\n\n[[Foo]]\n")
+		writeTestFile(t, root, "docs/Foo.md", "# Foo\n")
+		writeTestFile(t, root, "theme/page.html", `{{.Generated}}<main data-template="custom-page">{{.Page.HTML}}</main>`)
+
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{root}, &stdout, &stderr); code != 0 {
+			t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+		}
+
+		page := readTestFile(t, root, "public/Foo/index.html")
+		if !strings.Contains(page, `data-template="custom-page"`) {
+			t.Fatalf("custom page.html was not used for ordinary pages:\n%s", page)
+		}
+		index := readTestFile(t, root, "index.html")
+		if strings.Contains(index, `data-template="custom-page"`) {
+			t.Fatalf("home wrongly inherited the custom page.html instead of the default fallback:\n%s", index)
+		}
+		if !strings.Contains(index, defaultThemeMarker) {
+			t.Fatalf("home did not fall back to the default page template:\n%s", index)
+		}
+	})
+}
+
 func TestBuildRendersMathBlocksAndCompactTables(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")

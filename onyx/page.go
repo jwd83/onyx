@@ -42,6 +42,11 @@ func writePages(vault *Vault) error {
 	if err != nil {
 		return err
 	}
+	// The home page renders through the theme's home.html when present, otherwise
+	// it falls back to defaultPageTemplate — the embedded default page template,
+	// which the default theme ships no home.html override for. The fallback is the
+	// *default* template, not whatever page.html resolved to above, so a custom
+	// page.html does not silently restyle the home page.
 	homeTemplate, err := loadTemplateSource(vault, "home.html", defaultPageTemplate)
 	if err != nil {
 		return err
