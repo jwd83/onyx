@@ -5,19 +5,20 @@
 Onyx is a zero-dependency, single-binary Go static-site generator that publishes a
 folder of Markdown notes (an Obsidian-style vault) as a static website. The prior
 review (now at `plans/completed/2026-06-27-architectural-review.md`) drove a
-monolith-splitting and test-hardening campaign to completion; the four commits since
-its `47518fb` baseline implemented its named follow-ups — dangerous-scheme handling
-was centralized in `hasDangerousHrefScheme`/`normalizedScheme`, the per-call Markdown
-regexps were hoisted to package level, and config/link/inline tests were added. The
-result is a clean, navigable, well-tested small command: `gofmt` clean, `go vet`
-passes, tests pass at 87.9% coverage in under half a second. This is therefore a
-*finishing-pass* review, not a structural-overhaul one. The dominant remaining
-carrying cost is the hand-rolled Markdown renderer (the one large, safety-sensitive,
-manually-escaped surface), followed by thin verification at the filesystem/config
-edges that decide *what* gets built. A minimal CI workflow now enforces the checks
-the README already documents, so the recommended order of attack is targeted tests
-on the config/build and renderer edges, then optional cohesion cleanups — with
-explicit restraint against rewriting the parser or adding dependencies.
+monolith-splitting and test-hardening campaign to completion; recent follow-ups
+centralized dangerous-scheme handling in `hasDangerousHrefScheme`/`normalizedScheme`,
+hoisted the per-call Markdown regexps to package level, added config/link/inline
+tests, added CI, and overhauled the README. The result is a clean, navigable,
+well-tested small command: `gofmt` clean, `go vet` passes, tests pass at 88.9%
+coverage in under half a second. This is therefore a *finishing-pass* review, not a
+structural-overhaul one. The dominant remaining carrying cost is the hand-rolled
+Markdown renderer (the one large, safety-sensitive, manually-escaped surface),
+followed by small output-guard and metadata/template edges. A minimal CI workflow now
+enforces the checks the README already documents, and config/source-resolution edges
+are now pinned with direct tests. The recommended order of attack is targeted tests on
+the renderer and remaining small metadata/template edges, then optional cohesion
+cleanups — with explicit restraint against rewriting the parser or adding
+dependencies.
 
 ## Snapshot
 
@@ -27,26 +28,33 @@ explicit restraint against rewriting the parser or adding dependencies.
 | Go module | `onyx.jwd.me`; `go 1.21`; built/tested with `go1.26.3 darwin/arm64` |
 | Third-party dependencies | **0**; no `go.sum`; stdlib-only imports |
 | Source footprint | 11 non-test Go files, 2,388 lines; largest: `markdown.go` 760, `vault.go` 412, `links.go` 272, `config.go` 265, `page.go` 174; `onyx.go` 71, `theme.go` 18 |
-| Test footprint | 4 test files, 1,066 lines, 23 `Test*` functions |
+| Test footprint | 4 test files, 1,210 lines, 25 `Test*` functions |
 | Embedded default theme | 921 asset lines under `onyx/theme/default/` (`style.css` 427, `onyx.js` 419, `page.html` 75), embedded via `theme.go` |
-| Documentation | `README.md` 99 lines |
+| Documentation | `README.md` 204 lines |
 | Formatting / static checks | `gofmt -l` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -coverprofile` passes; 87.9% of statements; ~0.39s |
+| Test baseline | `go test ./... -coverprofile` passes; 88.9% of statements; ~0.28s |
 
 Interpretation: the structural metrics are healthy and stable. `markdown.go` is the
 one outlier at 760 lines — roughly a third of all source and nearly double the next
 file — because it carries the entire bespoke block+inline parser plus text
 extraction. Coverage is high overall but unevenly distributed: the strongest coverage
 is on inline/link/config logic (`renderInline` 85.7%, `sanitizeHref`/`parseINI`/the
-resolvers mostly 95–100%), while the weakest spots are concentrated in two clusters —
-filesystem/config plumbing (`findConfig` 61.1%, `resolveSources` 68.0%,
-`preparePublic` 61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%) and a few renderer
-helpers (`extractTags` 54.5%, `startsBlock` 62.5%, `mathBlock` 72.2%,
+resolvers mostly 95–100%, `findConfig` 88.9%, `resolveSources` 88.0%), while the
+weakest spots are now concentrated in filesystem output guards (`preparePublic`
+61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%) and a few renderer helpers
+(`extractTags` 54.5%, `startsBlock` 62.5%, `mathBlock` 72.2%,
 `parseMarkdownLink` 72.7%, `renderWiki` 77.8%).
 
 Progress update 2026-06-27: `.github/workflows/ci.yml` now runs the README's
 documented Go checks on push and pull request, and guards the zero-dependency
 contract by failing if extra modules or `go.sum` appear.
+
+Progress update 2026-06-27: `config_test.go` now pins root discovery and
+source-resolution behavior: walk-up discovery, `onyx.ini`-marked and
+content-folder-marked roots, explicit single/multi source handling, missing
+explicit sources, non-directory sources, and the no-content-directory error.
+This moved `findConfig` from 61.1% to 88.9% and `resolveSources` from 68.0% to
+88.0%.
 
 ## Structurally sound elements
 
@@ -108,22 +116,18 @@ Ranked by ongoing development cost.
    parser with a third-party Markdown library — that breaks the zero-dependency
    contract — and do not rewrite it speculatively.
 
-2. **Verification is thinnest exactly where Onyx decides *what* to build.**
-   *Evidence:* the convention engine — root discovery and source selection — is the
-   least-covered logic: `findConfig` 61.1% (the walk-up-to-root and "content folder
-   marks the root" branches), `resolveSources` 68.0% (explicit-source-missing,
-   not-a-directory, none-exist error paths), `hasDefaultSource` 75.0%, `readConfig`
-   78.6%. `config_test.go` covers the INI parser and compatibility aliases well, but
-   not the directory-resolution behavior that the README documents as the core
-   convention.
-   *Consequence:* the rules a user relies on ("run from a child directory", "list
-   `source = docs, wiki`", "an explicit source that doesn't exist should fail loudly")
-   are largely unprotected. A refactor here could silently change which folders build
-   or where the root is found, and the suite would stay green.
-   *Fix direction:* add table tests against a temp directory tree: walk-up discovery
-   from a nested start, `onyx.ini`-marked vs. content-folder-marked roots, explicit
-   single vs. multi source, a missing explicit source (must error), and a non-directory
-   source. Behavior-preserving; pins existing semantics.
+2. **The source-selection contract is now pinned by direct tests.**
+   *Evidence:* `config_test.go` now covers walk-up root discovery, `onyx.ini`-marked
+   roots, content-folder-marked roots without config, explicit single-source and
+   multi-source config, missing explicit sources, non-directory explicit sources, and
+   the no-content-directory error. Coverage rose to `findConfig` 88.9%,
+   `hasDefaultSource` 100.0%, `readConfig` 85.7%, and `resolveSources` 88.0%.
+   *Consequence:* the README's core convention rules ("run from a child directory",
+   "list `source = docs, wiki`", "an explicit source that doesn't exist should fail
+   loudly") now have focused regression coverage.
+   *Fix direction:* treat this area as protected unless product behavior changes. If
+   new source-selection features are added, extend these temp-directory table tests
+   before editing the resolver.
 
 3. **`extractTags` harvests tags from raw Markdown, including code blocks — and is the
    single lowest-covered logic function (54.5%).**
@@ -183,10 +187,10 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
 1. **Done 2026-06-27: add a minimal CI workflow** mirroring the README checks
    (`gofmt -l`, `go vet`, `go test ./...`) plus a zero-dependency guard. Highest
    leverage, lowest cost; every later step is now self-verifying on GitHub.
-2. **Pin the config/source-resolution edges with table tests** against temp directory
-   trees: walk-up root discovery, `onyx.ini`-marked vs. content-folder-marked roots,
-   explicit single/multi source, missing explicit source (must error), non-directory
-   source. (Risk 2.)
+2. **Done 2026-06-27: pin the config/source-resolution edges with table tests**
+   against temp directory trees: walk-up root discovery, `onyx.ini`-marked vs.
+   content-folder-marked roots, explicit single/multi source, missing explicit source
+   (must error), non-directory source. (Risk 2.)
 3. **Pin the under-covered renderer branches**: `parseMarkdownLink` with nested/empty
    labels, `renderWiki` asset-vs-note-vs-broken resolution, unterminated `mathBlock`,
    and `startsBlock` transitions. Add an attribute-injection regression test for
@@ -206,11 +210,11 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
 ## Closing assessment
 
 The dominant risk is no longer structure; it is the hand-rolled renderer's
-manually-enforced escaping discipline plus thin tests on the conventions that pick
-what gets built. With CI in place, the best next leverage is a few focused test steps
-converting the config/build and renderer edges from "probably correct" to "pinned."
-Expected payoff is disproportionate to effort — the code is already good, so a small
-finishing pass buys durable confidence. Above all, preserve the restraint that makes Onyx good:
+manually-enforced escaping discipline plus a few small, visible metadata/template
+edges. With CI and config/source tests in place, the best next leverage is focused
+renderer regression coverage, then the `extractTags` and home-template fallback
+items. Expected payoff is disproportionate to effort — the code is already good, so
+a small finishing pass buys durable confidence. Above all, preserve the restraint that makes Onyx good:
 stdlib-only Go, one installed command, relative static output, conservative overwrite
 safety, and a readable linear build pipeline. Resist the two tempting overcorrections —
 swapping in a Markdown dependency or building a `Page` builder framework — neither of
