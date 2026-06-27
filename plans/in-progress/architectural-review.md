@@ -16,11 +16,11 @@ Markdown renderer (the one large, safety-sensitive, manually-escaped surface),
 followed by small output-guard and metadata/template edges. A minimal CI workflow now
 enforces the checks the README already documents, config/source-resolution edges
 are pinned with direct tests, and (2026-06-27) the previously under-covered renderer
-branches plus an attribute-injection regression are now pinned as well. The remaining
-recommended steps are the small metadata/template edges — documenting and pinning
-`extractTags` current behavior and the default home/page template fallback — then
-optional cohesion cleanups, with explicit restraint against rewriting the parser or
-adding dependencies.
+branches plus an attribute-injection regression are now pinned as well, as is
+`extractTags`' current behavior (including the harvest-from-code-fences wart). The
+remaining recommended step is the small template edge — making the default home/page
+template fallback explicit — then optional cohesion cleanups, with explicit restraint
+against rewriting the parser or adding dependencies.
 
 ## Snapshot
 
@@ -34,7 +34,7 @@ adding dependencies.
 | Embedded default theme | 921 asset lines under `onyx/theme/default/` (`style.css` 427, `onyx.js` 419, `page.html` 75), embedded via `theme.go` |
 | Documentation | `README.md` 204 lines |
 | Formatting / static checks | `gofmt -l` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -coverprofile` passes; 91.5% of statements; ~0.36s |
+| Test baseline | `go test ./... -coverprofile` passes; 91.9% of statements; ~0.3s |
 
 Interpretation: the structural metrics are healthy and stable. `markdown.go` is the
 one outlier at 760 lines — roughly a third of all source and nearly double the next
@@ -45,8 +45,8 @@ resolvers mostly 95–100%, `findConfig` 88.9%, `resolveSources` 88.0%) and, as 
 2026-06-27 renderer pass, the previously weak renderer branches (`startsBlock`
 100%, `mathBlock` 100%, `parseMarkdownLink` 100%, `renderWiki` 96.3%). The
 weakest spots are now concentrated in filesystem output guards (`preparePublic`
-61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%) and tag extraction
-(`extractTags` 54.5%).
+61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%); tag extraction (`extractTags`)
+moved to 100% with the 2026-06-27 characterization pass below.
 
 Progress update 2026-06-27: `.github/workflows/ci.yml` now runs the README's
 documented Go checks on push and pull request, and guards the zero-dependency
@@ -72,6 +72,17 @@ cannot break out of their attribute. This moved `startsBlock` 62.5%→100%,
 and `renderInline` 85.7%→98.6% (with incidental gains on the table-alignment
 helpers), lifting overall statement coverage from 88.9% to 91.5%. No behavior
 changed; these are characterization tests only.
+
+Progress update 2026-06-27: `markdown_test.go` now characterizes `extractTags`
+(Risk 3 / step 4). `TestExtractTags` pins the matching contract — preceding
+start-or-whitespace boundary, no mid-word match, dedup, ascending sort, the
+allowed character class (letters/digits/`_`/`/`/`-`, so nested `#a/b/c` tags and a
+leading-hyphen `#-foo` both survive while `#foo.bar` truncates at the dot),
+case-sensitivity, and `#`-then-space headings being excluded — and explicitly pins
+the wart: tags are harvested from the raw document with no fence awareness, so
+`#include`/`#define` inside a fenced code block become site tags. This moved
+`extractTags` 54.5%→100% and overall coverage 91.5%→91.9%. No behavior changed;
+whether to skip fenced code remains a separate, explicitly-authorized step.
 
 ## Structurally sound elements
 
@@ -148,21 +159,22 @@ Ranked by ongoing development cost.
    new source-selection features are added, extend these temp-directory table tests
    before editing the resolver.
 
-3. **`extractTags` harvests tags from raw Markdown, including code blocks — and is the
-   single lowest-covered logic function (54.5%).**
+3. **`extractTags` harvests tags from raw Markdown, including code blocks — now
+   characterized at 100% coverage.**
    *Evidence:* `extractTags` (`onyx/markdown.go:720`) runs `tagRE` over the entire raw
    document with no awareness of fenced code. A line like `#define` or `#include` inside
    a ```` ```c ```` block is extracted as a site tag, as is any `#word` after
    whitespace in a code sample. `plainText` strips fences for the search excerpt, but
-   tag extraction does not.
+   tag extraction does not. As of 2026-06-27 `TestExtractTags` pins this behavior
+   directly, including the fenced-code-block case, moving the function from 54.5% to
+   100%.
    *Consequence:* search/graph metadata can be polluted by code content. It is a
    contained correctness wart, not a safety issue, but it is invisible until a vault
-   with code blocks is published.
-   *Fix direction:* first pin current behavior with a direct test (including the
-   code-block case) so the gap is documented like the other deliberately-pinned
-   Markdown quirks. If the behavior is judged wrong, the smallest fix is to extract
-   tags from the already-computed fence-stripped text rather than the raw source — a
-   behavior change, so make it a separate, explicitly-authorized step.
+   with code blocks is published. The wart is now documented and regression-pinned.
+   *Fix direction:* current behavior is pinned. If the behavior is judged wrong, the
+   smallest fix is to extract tags from the already-computed fence-stripped text rather
+   than the raw source — a behavior change, so make it a separate, explicitly-authorized
+   step, updating the "tags harvested from inside code fences" case when it lands.
 
 4. **CI now enforces the checks the README already documents.**
    *Evidence:* `.github/workflows/ci.yml` runs on push and pull request, sets up Go
@@ -215,9 +227,10 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
    single-line/open/close/unterminated `mathBlock`, and every paragraph→block
    `startsBlock` transition, plus an attribute-injection regression test for Markdown
    link/image/wikilink rendering. (Risk 1.)
-4. **Document and pin `extractTags` current behavior**, including the code-block case,
-   the way other known Markdown quirks are already pinned. Decide separately, and only
-   with explicit authorization, whether to change it to skip fenced code. (Risk 3.)
+4. **Done 2026-06-27: document and pin `extractTags` current behavior**, including the
+   code-block case, the way other known Markdown quirks are already pinned
+   (`TestExtractTags`, 54.5%→100%). Whether to change it to skip fenced code remains a
+   separate, explicitly-authorized decision. (Risk 3.)
 5. **Make the home/page template fallback explicit**: a comment at the `home.html`
    load site and a test that the default (no-override) home renders via the page
    template. (Risk 5.)
@@ -231,9 +244,9 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
 
 The dominant risk is no longer structure; it is the hand-rolled renderer's
 manually-enforced escaping discipline plus a few small, visible metadata/template
-edges. With CI and config/source tests in place, the best next leverage is focused
-renderer regression coverage, then the `extractTags` and home-template fallback
-items. Expected payoff is disproportionate to effort — the code is already good, so
+edges. With CI, config/source, renderer, and `extractTags` tests now in place, the
+best next leverage is the single remaining home-template fallback item (step 5).
+Expected payoff is disproportionate to effort — the code is already good, so
 a small finishing pass buys durable confidence. Above all, preserve the restraint that makes Onyx good:
 stdlib-only Go, one installed command, relative static output, conservative overwrite
 safety, and a readable linear build pipeline. Resist the two tempting overcorrections —

@@ -362,3 +362,39 @@ func TestRenderWikiAssetAndEmbed(t *testing.T) {
 		}
 	})
 }
+
+// TestExtractTags characterizes extractTags as it behaves today. It is a
+// characterization test, not a specification: it pins current behavior so the
+// known quirks stay visible and intentional, including the documented wart that
+// tags are harvested from the raw document with no awareness of fenced code, so
+// `#include`/`#define` inside a code block become site tags. Changing that
+// (harvesting from fence-stripped text) is a separate, behavior-changing step.
+func TestExtractTags(t *testing.T) {
+	cases := []struct {
+		name     string
+		markdown string
+		want     []string
+	}{
+		{"single tag", "#foo", []string{"foo"}},
+		{"requires preceding start or space, sorted", "a #foo and #bar", []string{"bar", "foo"}},
+		{"not matched mid-word", "word#foo", nil},
+		{"deduplicated", "#foo #foo", []string{"foo"}},
+		{"sorted ascending", "#zebra #apple #mango", []string{"apple", "mango", "zebra"}},
+		{"stops at disallowed char", "#foo.bar", []string{"foo"}},
+		{"slashes form nested tags", "#foo/bar/baz", []string{"foo/bar/baz"}},
+		{"hyphen and underscore allowed", "#foo-bar #baz_qux", []string{"baz_qux", "foo-bar"}},
+		{"digits only", "#123", []string{"123"}},
+		{"leading hyphen kept", "#-foo", []string{"-foo"}},
+		{"headings are not tags", "# heading\n## sub", nil},
+		{"case sensitive, not deduped across case", "text #Tag and #tag", []string{"Tag", "tag"}},
+		// The wart: code fences are not stripped, so code content pollutes tags.
+		{"tags harvested from inside code fences", "```c\n#include <stdio.h>\n#define X 1\n```", []string{"define", "include"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractTags(tc.markdown); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("extractTags(%q) = %#v, want %#v", tc.markdown, got, tc.want)
+			}
+		})
+	}
+}
