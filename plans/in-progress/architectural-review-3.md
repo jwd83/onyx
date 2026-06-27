@@ -179,6 +179,16 @@ down.
    and `ensureNoJekyll`'s create-vs-skip. Closes the one coverage gap that protects against
    data loss. Do this first; it is independently useful and cheap.
 
+   *Done 2026-06-27*, in current working-tree changes:
+   - `onyx/onyx_test.go`: added `TestDestructiveOutputGuards`, covering marked
+     `public/` replacement, refusal to treat a file at `public` as a generated output
+     directory, `.nojekyll` creation, and preservation of an existing `.nojekyll`.
+
+   Result: `gofmt -l $(git ls-files '*.go')`, `go vet ./...`, and
+   `go test -count=1 ./... -coverprofile=/tmp/onyx-cover-after.out` pass. Overall
+   statement coverage is now 92.1%; `preparePublic` moved from 61.5% to 76.9% and
+   `ensureNoJekyll` moved from 66.7% to 83.3%. No behavior changed.
+
 2. **Consolidate the resolver lookup core (Risk 2).** Extract the shared
    "candidates → exact index → basename index → `nearestByFolder`" path so note and asset
    resolution share one implementation, leaving the wikilink/Markdown dispatch in place.
