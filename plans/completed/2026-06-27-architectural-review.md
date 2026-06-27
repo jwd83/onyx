@@ -1,6 +1,8 @@
 # Architectural Review — Onyx
 
-*Reviewed 2026-06-26 local EDT against `master` @ `47518fb`.*
+*Reviewed 2026-06-26 local EDT against `master` @ `47518fb`. Completed
+2026-06-27 after the config-contract, contributor-guardrail, and review
+lifecycle follow-ups were applied.*
 
 Onyx has made the jump the previous review was aiming for: the project is still
 a zero-dependency, single-binary Go static-site generator, but it is no longer
@@ -10,19 +12,19 @@ share mechanics, and the highest-risk inline/link/config surfaces have direct
 tests. The dominant carrying cost has shifted from "too much in one file" to a
 smaller, sharper set of risks: generated-output behavior, theme/static override
 behavior, and the still-manual HTML safety model need continued regression
-coverage. This file is now the single active architectural review artifact.
+coverage. This completed review is retained as the record of that campaign.
 
 ## Snapshot
 
 | Metric | Value |
 | --- | --- |
-| Repository shape | 26 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; one active review artifact |
+| Repository shape | 26 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; completed review artifact under `plans/completed/` |
 | Go module | `onyx.jwd.me`; `go 1.21`; tested with `go1.26.3 darwin/arm64` |
 | Third-party dependencies | **0**; no `go.sum`; imports are stdlib-only |
 | Source footprint | 11 non-test Go files, 2,388 lines; largest: `markdown.go` 760, `vault.go` 412, `links.go` 272, `config.go` 265; `onyx.go` is now 71 lines |
 | Test footprint | 4 Go test files, 986 lines, 22 `Test*` functions |
 | Embedded default theme | 921 real asset lines under `onyx/theme/default/`, embedded through `theme.go`: CSS 427, JS 419, page template 75 |
-| Documentation | `README.md` 83 lines; active review refresh at this file |
+| Documentation | `README.md` 83 lines at review time; completed review refresh at this file |
 | Formatting/static checks | `gofmt -l $(rg --files -g '*.go')` clean; `go vet ./...` passes |
 | Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes; coverage is 87.7% of statements |
 
@@ -163,21 +165,17 @@ visible: `boolOr` 50% and `extractTags` 58.3%.
 - `isBlankFile` now has direct ASCII and UTF-16LE coverage. Keep the branch
   unless a later compatibility decision removes support for UTF-16LE blank root
   files.
-- `plans/in-progress/architectural-review-gpt5.5.md` is the only active review
-  artifact now. Consider renaming it to a model-neutral
-  `architectural-review.md` if the review will remain the canonical plan.
+- This artifact has been moved through the completed-plan lifecycle to
+  `plans/completed/2026-06-27-architectural-review.md`.
 - The README now documents the local contributor guardrails: `gofmt -l`,
   `go vet`, `go test`, the zero-dependency contract, relative generated URLs,
   and conservative generated-output safety. There is still no CI/workflow file,
   so automated PR checks remain an optional follow-up if repository activity
   makes them useful.
 
-## Recommended order of attack
+## Remaining Follow-Up
 
-1. **Rename or complete the active review artifact when this campaign is done.**
-   If this remains the canonical review, use a model-neutral filename; otherwise
-   move it through the completed-plan lifecycle.
-2. **Optionally add CI when automation is worth the upkeep.** A lightweight
+1. **Optionally add CI when automation is worth the upkeep.** A lightweight
    workflow can mirror the README checks: `gofmt -l`, `go vet`, and
    `go test ./...`.
 
