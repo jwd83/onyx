@@ -19,12 +19,12 @@ coverage. This file is now the single active architectural review artifact.
 | Repository shape | 26 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; one active review artifact |
 | Go module | `onyx.jwd.me`; `go 1.21`; tested with `go1.26.3 darwin/arm64` |
 | Third-party dependencies | **0**; no `go.sum`; imports are stdlib-only |
-| Source footprint | 11 non-test Go files, 2,385 lines; largest: `markdown.go` 757, `vault.go` 412, `links.go` 272, `config.go` 265; `onyx.go` is now 71 lines |
-| Test footprint | 4 Go test files, 880 lines, 19 `Test*` functions |
+| Source footprint | 11 non-test Go files, 2,388 lines; largest: `markdown.go` 760, `vault.go` 412, `links.go` 272, `config.go` 265; `onyx.go` is now 71 lines |
+| Test footprint | 4 Go test files, 986 lines, 22 `Test*` functions |
 | Embedded default theme | 921 real asset lines under `onyx/theme/default/`, embedded through `theme.go`: CSS 427, JS 419, page template 75 |
 | Documentation | `README.md` 83 lines; active review refresh at this file |
 | Formatting/static checks | `gofmt -l $(rg --files -g '*.go')` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes in 0.240s; coverage is 84.0% of statements |
+| Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes; coverage is 87.7% of statements |
 
 Interpretation: the earlier structural campaign paid off. Since the previous
 `73c2b90` review baseline, the repo lowered the Go directive (`4eff5ff`), split
@@ -35,9 +35,12 @@ documented the load-bearing build order (`47518fb`). Function coverage confirms
 the improvement where it mattered most: `renderInline` is 85.7% covered,
 `renderBlocks` is 93.8%, `renderBlockquote` is 95.7%,
 `renderListItem` is 100%, `parseINI` and `sanitizeHref` are 100%, and the
-link/asset resolvers are mostly 95-100%. The remaining weak spots are
-concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
-`updateGeneratedHome` 18.8%, `boolOr` 50%, and `extractTags` 58.3%.
+link/asset resolvers are mostly 95-100%. The newest build-level tests now cover
+custom theme CSS/JS/template overrides, `theme/static` copying, blank root
+`index.html` replacement, generated single-source home output, and
+`isBlankFile`. The per-call Markdown regexps have also been hoisted to
+package-level compiled values. The remaining weak spots are concentrated and
+visible: `boolOr` 50% and `extractTags` 58.3%.
 
 ## Structurally sound elements
 
@@ -76,22 +79,24 @@ concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
 
 ## Structural risks and costs
 
-1. **The remaining test gap is now output/theme behavior, not Markdown parsing.**
+1. **The output/theme test net now covers the highest-risk write paths.**
    *Evidence:* Function coverage now exercises the block renderer directly:
    `renderBlocks` is 93.8%, `renderBlockquote` is 95.7%,
    `stripBlockquoteMarker`, `listMarker`, and `renderListItem` are 100%, and
-   `sanitizeClass` is 88.9%. The low-coverage areas have moved to filesystem and
-   generated-output paths: `copyDir` 0%, `isBlankFile` 0%, and
-   `updateGeneratedHome` 18.8%. The existing integration tests still do not
-   cover custom theme overrides, `theme/static` copying, blank root `index.html`
-   replacement, or generated single-source home output.
-   *Consequence:* the most likely future regressions now sit at the boundary
-   where Onyx writes files or honors user theme/config choices. A change to
-   theme override lookup, static asset copying, blank-file safety, or generated
-   home pages could slip through even though parser coverage is healthy.
-   *Fix direction:* add build-level tests for custom theme overrides,
-   `theme/static` copying, blank root `index.html` handling, and generated
-   single-source home output.
+   `sanitizeClass` is 88.9%. The custom-theme test moved `copyDir` to 81%
+   coverage, while the blank-index/generated-home tests moved
+   `ensureRootIndexWritable` to 75%, `isBlankFile` to 100%, and
+   `updateGeneratedHome` to 100%. The existing integration tests now cover
+   custom theme CSS/JS/template overrides, `theme/static` copying, blank root
+   `index.html` replacement, generated single-source home output, relative
+   public asset paths, sectioned generated homes, and unmarked `public/`
+   refusal.
+   *Consequence:* the highest-risk write paths are now pinned by tests. The
+   remaining risk is less about missing output coverage and more about keeping
+   the small helpers simple enough that future output-path changes are easy to
+   review.
+   *Fix direction:* stop expanding broad build fixtures for now; move to the
+   small cleanup items unless a new output feature changes the risk profile.
 
 2. **The HTML/href safety model is still manual, but dangerous schemes are now centralized.**
    *Evidence:* Markdown output is constructed by hand and then stored as
@@ -109,19 +114,19 @@ concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
    churn continues, consider a tiny shared escaping helper for link and image
    attributes.
 
-3. **Theme extraction is complete, but the theme extension surface is thinly verified.**
-   *Evidence:* `writeThemeOrDefault` is 60% covered and `copyDir` is 0% covered.
-   The default JS is a real 419-line file, but no check verifies it parses after
-   edits. The README documents `theme/` overrides and `theme/static`, while tests
-   primarily exercise the built-in default asset paths.
-   *Consequence:* the new file layout is much better for editing, but mistakes
-   in override lookup, static asset copying, or JS syntax may only show up after
-   a generated site is opened in a browser.
-   *Fix direction:* add one integration test that supplies custom `theme/style.css`,
-   `theme/onyx.js`, `theme/page.html`, and `theme/static/*`, then asserts output
-   bytes and relative links. If a JS runtime is available in development, add an
-   optional local `node --check onyx/theme/default/onyx.js` note; do not make the
-   project depend on Node.
+3. **Theme extraction is complete, and the extension surface now has a first integration check.**
+   *Evidence:* `writeThemeOrDefault` is 80% covered, `copyDir` is 81% covered,
+   and `loadTemplateSource` is 85.7% covered. The default JS is a real 419-line
+   file, but no check verifies it parses after edits. The README documents
+   `theme/` overrides and `theme/static`, and the build tests now assert custom
+   CSS, JS, page/home templates, copied static assets, relative asset URLs, and
+   skipped dotfiles.
+   *Consequence:* the new file layout is much better for editing, and override
+   lookup/static copying are now pinned. JS syntax mistakes may still only show
+   up after a generated site is opened in a browser.
+   *Fix direction:* if a JS runtime is available in development, add an optional
+   local `node --check onyx/theme/default/onyx.js` note; do not make the project
+   depend on Node.
 
 4. **`Page` mutation is documented but still spread across the pipeline.**
    *Evidence:* `loadVault` sets `PageRel`, `URL`, `SourceURL`, home status, and
@@ -153,12 +158,11 @@ concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
 
 ### Smaller frictions
 
-- `stripInlineMarkdown` and `extractTags` still compile regexps per call at
-  `onyx/markdown.go:677` and `onyx/markdown.go:716`. Hoist them to
-  package-level `regexp.MustCompile` vars once the current tests are green.
-- `isBlankFile` still has an untested UTF-16LE blank-file branch
-  (`onyx/build.go:96-103`). Either test it or remove it if the behavior is not
-  intentional.
+- `stripInlineMarkdown` and `extractTags` now reuse package-level compiled
+  regexps instead of compiling them per call.
+- `isBlankFile` now has direct ASCII and UTF-16LE coverage. Keep the branch
+  unless a later compatibility decision removes support for UTF-16LE blank root
+  files.
 - `plans/in-progress/architectural-review-gpt5.5.md` is the only active review
   artifact now. Consider renaming it to a model-neutral
   `architectural-review.md` if the review will remain the canonical plan.
@@ -167,21 +171,14 @@ concentrated and visible: `copyDir` 0%, `isBlankFile` 0%,
 
 ## Recommended order of attack
 
-1. **Finish the current test net around output/theme behavior.** Add build-level
-   tests for custom `style.css`, `onyx.js`, `page.html`/`home.html`, copied
-   `theme/static` files, blank root `index.html` handling, generated single-source
-   home output, and `isBlankFile`.
-2. **Hoist the regexps and clean the small hot spots.** Move the three per-call
-   regexps to package vars; either test or simplify the UTF-16 blank-file branch;
-   keep `countPages` as success-message-only code.
-3. **Clarify the config compatibility contract.** Remove stale `base_url`
+1. **Clarify the config compatibility contract.** Remove stale `base_url`
    fixtures, decide whether legacy keys are supported, and document/test that
    decision.
-4. **Document contributor guardrails.** Add a short README development note or
+2. **Document contributor guardrails.** Add a short README development note or
    lightweight CI workflow covering `go test ./...`, `go vet ./...`, `gofmt -l`,
    zero third-party dependencies, relative URL behavior, and generated-output
    safety.
-5. **Rename or complete the active review artifact when this campaign is done.**
+3. **Rename or complete the active review artifact when this campaign is done.**
    If this remains the canonical review, use a model-neutral filename; otherwise
    move it through the completed-plan lifecycle.
 

@@ -13,6 +13,12 @@ import (
 	"unicode/utf8"
 )
 
+var (
+	stripInlineWikiRE = regexp.MustCompile(`!?\[\[([^|\]#]+)(?:#[^|\]]*)?(?:\|([^\]]+))?\]\]`)
+	stripInlineLinkRE = regexp.MustCompile(`!?\[([^\]]*)\]\([^)]+\)`)
+	tagRE             = regexp.MustCompile(`(^|\s)#([A-Za-z0-9_/-]+)`)
+)
+
 type MarkdownRenderer struct {
 	vault      *Vault
 	current    *Page
@@ -675,16 +681,14 @@ func (r *MarkdownRenderer) warn(message string) {
 }
 
 func stripInlineMarkdown(s string) string {
-	wikiRE := regexp.MustCompile(`!?\[\[([^|\]#]+)(?:#[^|\]]*)?(?:\|([^\]]+))?\]\]`)
-	s = wikiRE.ReplaceAllStringFunc(s, func(match string) string {
-		m := wikiRE.FindStringSubmatch(match)
+	s = stripInlineWikiRE.ReplaceAllStringFunc(s, func(match string) string {
+		m := stripInlineWikiRE.FindStringSubmatch(match)
 		if len(m) > 2 && m[2] != "" {
 			return m[2]
 		}
 		return path.Base(m[1])
 	})
-	linkRE := regexp.MustCompile(`!?\[([^\]]*)\]\([^)]+\)`)
-	s = linkRE.ReplaceAllString(s, "$1")
+	s = stripInlineLinkRE.ReplaceAllString(s, "$1")
 	for _, marker := range []string{"**", "__", "*", "`"} {
 		s = strings.ReplaceAll(s, marker, "")
 	}
@@ -714,8 +718,7 @@ func plainText(markdown string) string {
 }
 
 func extractTags(markdown string) []string {
-	re := regexp.MustCompile(`(^|\s)#([A-Za-z0-9_/-]+)`)
-	matches := re.FindAllStringSubmatch(markdown, -1)
+	matches := tagRE.FindAllStringSubmatch(markdown, -1)
 	seen := map[string]bool{}
 	var tags []string
 	for _, match := range matches {

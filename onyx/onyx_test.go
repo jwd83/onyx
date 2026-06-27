@@ -106,6 +106,112 @@ func TestBuildRefusesUnmarkedPublicDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildReplacesBlankRootIndexWithGeneratedHome(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
+	writeTestFile(t, root, "index.html", " \n\t\n")
+	writeTestFile(t, root, "docs/Alpha.md", "# Alpha\n\nFirst generated-home entry.\n")
+	writeTestFile(t, root, "docs/Nested/Beta.md", "# Beta\n\nSecond generated-home entry.\n")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	index := readTestFile(t, root, "index.html")
+	if !strings.Contains(index, generatedMarker) {
+		t.Fatalf("blank root index was not replaced with generated output:\n%s", index)
+	}
+	if !strings.Contains(index, "This site was generated from a folder of Markdown notes.") {
+		t.Fatalf("generated single-source home intro missing:\n%s", index)
+	}
+	if !strings.Contains(index, `href="public/Alpha/"`) || !strings.Contains(index, `>Alpha</a>`) {
+		t.Fatalf("generated home did not link Alpha:\n%s", index)
+	}
+	if !strings.Contains(index, `href="public/Nested/Beta/"`) || !strings.Contains(index, `>Beta</a>`) {
+		t.Fatalf("generated home did not link nested Beta:\n%s", index)
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "Alpha", "index.html")); err != nil {
+		t.Fatalf("Alpha page was not generated: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "Nested", "Beta", "index.html")); err != nil {
+		t.Fatalf("nested Beta page was not generated: %v", err)
+	}
+}
+
+func TestIsBlankFile(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "empty", data: nil, want: true},
+		{name: "ascii whitespace", data: []byte(" \n\t\r"), want: true},
+		{name: "html", data: []byte("<!doctype html>"), want: false},
+		{name: "utf16le whitespace", data: []byte{0xff, 0xfe, ' ', 0, '\n', 0, '\t', 0}, want: true},
+		{name: "utf16le content", data: []byte{0xff, 0xfe, 'x', 0}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBlankFile(tt.data); got != tt.want {
+				t.Fatalf("isBlankFile(%v) = %v, want %v", tt.data, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildUsesCustomThemeAndCopiesStaticAssets(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\n")
+	writeTestFile(t, root, "docs/index.md", "# Home\n\n[[Foo]]\n")
+	writeTestFile(t, root, "docs/Foo.md", "# Foo\n\nCustom themed page.\n")
+	writeTestFile(t, root, "theme/style.css", "body { color: rebeccapurple; }\n")
+	writeTestFile(t, root, "theme/onyx.js", "window.customOnyxTheme = true;\n")
+	writeTestFile(t, root, "theme/home.html", `{{.Generated}}<main data-template="custom-home">{{.Page.HTML}}</main>`)
+	writeTestFile(t, root, "theme/page.html", `{{.Generated}}<main data-template="custom-page"><link href="{{.CSSURL}}"><script src="{{.JSURL}}"></script><img src="{{asset "theme/icons/logo badge.svg"}}">{{.Page.HTML}}</main>`)
+	writeTestFile(t, root, "theme/static/icons/logo badge.svg", "<svg></svg>\n")
+	writeTestFile(t, root, "theme/static/icons/.draft.svg", "<svg></svg>\n")
+	writeTestFile(t, root, "theme/static/.private/secret.txt", "hidden\n")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("run failed with code %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	if got := readTestFile(t, root, "public/onyx.css"); got != "body { color: rebeccapurple; }\n" {
+		t.Fatalf("custom CSS was not written:\n%s", got)
+	}
+	if got := readTestFile(t, root, "public/onyx.js"); got != "window.customOnyxTheme = true;\n" {
+		t.Fatalf("custom JS was not written:\n%s", got)
+	}
+	if got := readTestFile(t, root, "public/theme/icons/logo badge.svg"); got != "<svg></svg>\n" {
+		t.Fatalf("theme static asset was not copied:\n%s", got)
+	}
+
+	index := readTestFile(t, root, "index.html")
+	if !strings.Contains(index, `data-template="custom-home"`) {
+		t.Fatalf("custom home template was not used:\n%s", index)
+	}
+	page := readTestFile(t, root, "public/Foo/index.html")
+	if !strings.Contains(page, `data-template="custom-page"`) {
+		t.Fatalf("custom page template was not used:\n%s", page)
+	}
+	if !strings.Contains(page, `href="../../public/onyx.css"`) || !strings.Contains(page, `src="../../public/onyx.js"`) {
+		t.Fatalf("custom page template did not receive relative asset URLs:\n%s", page)
+	}
+	if !strings.Contains(page, `src="../../public/theme/icons/logo%20badge.svg"`) {
+		t.Fatalf("template asset helper did not point at copied static asset:\n%s", page)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "public", "theme", "icons", ".draft.svg")); !os.IsNotExist(err) {
+		t.Fatalf("dotfile static asset should have been skipped, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "theme", ".private")); !os.IsNotExist(err) {
+		t.Fatalf("dot directory static assets should have been skipped, err=%v", err)
+	}
+}
+
 func TestBuildRendersMathBlocksAndCompactTables(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "onyx.ini", "site_title = Test Notes\nsource = docs\nbase_url = /\n")
