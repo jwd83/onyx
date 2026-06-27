@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Guard zero-dependency contract
+        run: |
+          main_module="$(go list -m)"
+          all_modules="$(go list -m all)"
+          if [ "$all_modules" != "$main_module" ]; then
+            echo "$all_modules"
+            exit 1
+          fi
+          if [ -f go.sum ]; then
+            echo "go.sum exists; Onyx is expected to stay stdlib-only unless this contract changes deliberately."
+            exit 1
+          fi
