@@ -152,3 +152,213 @@ func TestRenderBlocksHeadingIDsAndHorizontalRule(t *testing.T) {
 		t.Errorf("Headings = %v, want %v", got.Headings, wantHeadings)
 	}
 }
+
+// TestParagraphBlockBoundaries pins startsBlock's transitions: a paragraph that
+// runs directly into a block starter (no blank separator line) must close at the
+// boundary and let the following block render.
+func TestParagraphBlockBoundaries(t *testing.T) {
+	cases := []struct{ name, markdown, want string }{
+		{
+			name:     "paragraph into heading",
+			markdown: "para\n# Heading",
+			want:     "<p>para</p>\n" + `<h1 id="heading">Heading</h1>` + "\n",
+		},
+		{
+			name:     "paragraph into fenced code",
+			markdown: "para\n```\ncode\n```",
+			want:     "<p>para</p>\n<pre><code>code</code></pre>\n",
+		},
+		{
+			name:     "paragraph into horizontal rule",
+			markdown: "para\n---",
+			want:     "<p>para</p>\n<hr>\n",
+		},
+		{
+			name:     "paragraph into blockquote",
+			markdown: "para\n> quote",
+			want:     "<p>para</p>\n<blockquote>\n<p>quote</p>\n</blockquote>\n",
+		},
+		{
+			name:     "paragraph into list",
+			markdown: "para\n- item",
+			want:     "<p>para</p>\n<ul>\n<li>item</li>\n</ul>\n",
+		},
+		{
+			name:     "paragraph into math block",
+			markdown: "para\n$$x^2$$",
+			want:     "<p>para</p>\n" + `<div class="onyx-math">$$` + "\nx^2\n$$</div>\n",
+		},
+		{
+			name:     "paragraph into aligned table",
+			markdown: "para\n| A | B |\n| :-- | --: |\n| 1 | 2 |",
+			want: "<p>para</p>\n" +
+				"<table>\n<thead><tr>" +
+				`<th style="text-align:left">A</th>` +
+				`<th style="text-align:right">B</th>` +
+				"</tr></thead>\n<tbody>\n<tr>" +
+				`<td style="text-align:left">1</td>` +
+				`<td style="text-align:right">2</td>` +
+				"</tr>\n</tbody>\n</table>\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderTestMarkdown(tc.markdown).HTML; got != tc.want {
+				t.Errorf("Render(%q).HTML =\n%s\nwant\n%s", tc.markdown, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStartsBlockBlankLine covers the one startsBlock branch renderBlocks cannot
+// reach: it short-circuits on blank lines before calling startsBlock, so the
+// blank-line case is only observable by calling the predicate directly.
+func TestStartsBlockBlankLine(t *testing.T) {
+	lines := []string{"prose", "", "more"}
+	if startsBlock(lines, 0) {
+		t.Errorf("startsBlock on prose = true, want false")
+	}
+	if !startsBlock(lines, 1) {
+		t.Errorf("startsBlock on blank line = false, want true")
+	}
+}
+
+// TestMathBlocks pins the display-math forms beyond the bare multi-line block the
+// integration test already covers: single-line, content on the opening or closing
+// fence, and an unterminated block.
+func TestMathBlocks(t *testing.T) {
+	wrap := func(body string) string {
+		return `<div class="onyx-math">$$` + "\n" + body + "\n$$</div>\n"
+	}
+	cases := []struct{ name, markdown, want string }{
+		{"single line escapes html", "$$a<b$$", wrap("a&lt;b")},
+		{"open fence carries content", "$$ a + b\n$$", wrap("a + b")},
+		{"close fence carries content", "$$\nfoo\nbar$$", wrap("foo\nbar")},
+		{"unterminated keeps remaining lines", "$$\nx + y", wrap("x + y")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderTestMarkdown(tc.markdown)
+			if got.HTML != tc.want {
+				t.Errorf("Render(%q).HTML =\n%q\nwant\n%q", tc.markdown, got.HTML, tc.want)
+			}
+			if !got.HasMath {
+				t.Errorf("Render(%q).HasMath = false, want true", tc.markdown)
+			}
+		})
+	}
+}
+
+// TestParseMarkdownLink pins the three rejection paths and the success shape of
+// the Markdown-link scanner, including the defensive non-bracket guard that
+// renderInline never reaches.
+func TestParseMarkdownLink(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       string
+		label    string
+		dest     string
+		consumed int
+		ok       bool
+	}{
+		{"well formed", "[label](dest)rest", "label", "dest", 13, true},
+		{"missing destination open", "[label]", "", "", 0, false},
+		{"missing destination close", "[label](dest", "", "", 0, false},
+		{"not a link", "plain text", "", "", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			label, dest, consumed, ok := parseMarkdownLink(tc.in)
+			if label != tc.label || dest != tc.dest || consumed != tc.consumed || ok != tc.ok {
+				t.Errorf("parseMarkdownLink(%q) = (%q, %q, %d, %v), want (%q, %q, %d, %v)",
+					tc.in, label, dest, consumed, ok, tc.label, tc.dest, tc.consumed, tc.ok)
+			}
+		})
+	}
+}
+
+// TestRenderInlineMalformedLinks asserts the observable behavior of the rejected
+// link forms: a `[` that does not complete a Markdown link renders literally
+// rather than being dropped.
+func TestRenderInlineMalformedLinks(t *testing.T) {
+	r, _ := testRenderer(testVault(Config{}, []string{"index.md"}, nil), "index.md")
+	cases := []struct{ name, in, want string }{
+		{"missing destination renders literally", "[label without dest", "[label without dest"},
+		{"unclosed destination renders literally", "[label](dest", "[label](dest"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := r.renderInline(tc.in); got != tc.want {
+				t.Errorf("renderInline(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderInlineAttributeInjection is a regression guard: quote and angle
+// characters in a link destination, image alt, or wikilink alias must be escaped
+// so they cannot break out of the surrounding HTML attribute.
+func TestRenderInlineAttributeInjection(t *testing.T) {
+	v := testVault(Config{}, []string{"index.md", "Guide.md"}, []string{"img/diagram.png"})
+	cases := []struct{ name, in, want string }{
+		{
+			name: "link href quote is escaped",
+			in:   `[x](https://e.com/a"onmouseover=1)`,
+			want: `<a href="https://e.com/a&#34;onmouseover=1">x</a>`,
+		},
+		{
+			name: "image alt markup is escaped",
+			in:   `![evil"><img>](img/diagram.png)`,
+			want: `<img src="img/diagram.png" alt="evil&#34;&gt;&lt;img&gt;">`,
+		},
+		{
+			name: "wikilink alias markup is escaped",
+			in:   `[[Guide|evil"><b>]]`,
+			want: `<a class="wiki-link" href="public/Guide/">evil&#34;&gt;&lt;b&gt;</a>`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _ := testRenderer(v, "index.md")
+			if got := r.renderInline(tc.in); got != tc.want {
+				t.Errorf("renderInline(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderWikiAssetAndEmbed covers renderWiki's asset-as-link and note-embed
+// branches and the embed path that falls through to a broken-link span.
+func TestRenderWikiAssetAndEmbed(t *testing.T) {
+	v := testVault(Config{}, []string{"index.md", "Guide.md"}, []string{"img/diagram.png"})
+
+	t.Run("image asset wikilink renders a link, not an embed", func(t *testing.T) {
+		r, _ := testRenderer(v, "index.md")
+		want := `<a href="img/diagram.png">diagram.png</a>`
+		if got := r.renderInline("[[img/diagram.png]]"); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("note embed renders an embed-note link", func(t *testing.T) {
+		r, _ := testRenderer(v, "index.md")
+		want := `<a class="embed-note" href="public/Guide/">Guide</a>`
+		if got := r.renderInline("![[Guide]]"); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+		if !r.outgoing["Guide"] {
+			t.Errorf("note embed did not record an outgoing link: %v", r.outgoing)
+		}
+	})
+
+	t.Run("broken embed warns and renders a broken-link span", func(t *testing.T) {
+		r, warnings := testRenderer(v, "index.md")
+		want := `<span class="broken-link">[[missing.png]]</span>`
+		if got := r.renderInline("![[missing.png]]"); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+		if len(*warnings) != 1 || !strings.Contains((*warnings)[0], "unresolved wikilink [[missing.png]]") {
+			t.Errorf("warnings = %v, want one unresolved-wikilink warning", *warnings)
+		}
+	})
+}

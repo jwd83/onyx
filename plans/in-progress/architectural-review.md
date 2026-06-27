@@ -14,11 +14,13 @@ coverage in under half a second. This is therefore a *finishing-pass* review, no
 structural-overhaul one. The dominant remaining carrying cost is the hand-rolled
 Markdown renderer (the one large, safety-sensitive, manually-escaped surface),
 followed by small output-guard and metadata/template edges. A minimal CI workflow now
-enforces the checks the README already documents, and config/source-resolution edges
-are now pinned with direct tests. The recommended order of attack is targeted tests on
-the renderer and remaining small metadata/template edges, then optional cohesion
-cleanups — with explicit restraint against rewriting the parser or adding
-dependencies.
+enforces the checks the README already documents, config/source-resolution edges
+are pinned with direct tests, and (2026-06-27) the previously under-covered renderer
+branches plus an attribute-injection regression are now pinned as well. The remaining
+recommended steps are the small metadata/template edges — documenting and pinning
+`extractTags` current behavior and the default home/page template fallback — then
+optional cohesion cleanups, with explicit restraint against rewriting the parser or
+adding dependencies.
 
 ## Snapshot
 
@@ -28,22 +30,23 @@ dependencies.
 | Go module | `onyx.jwd.me`; `go 1.21`; built/tested with `go1.26.3 darwin/arm64` |
 | Third-party dependencies | **0**; no `go.sum`; stdlib-only imports |
 | Source footprint | 11 non-test Go files, 2,388 lines; largest: `markdown.go` 760, `vault.go` 412, `links.go` 272, `config.go` 265, `page.go` 174; `onyx.go` 71, `theme.go` 18 |
-| Test footprint | 4 test files, 1,210 lines, 25 `Test*` functions |
+| Test footprint | 4 test files, 1,420 lines, 32 `Test*` functions |
 | Embedded default theme | 921 asset lines under `onyx/theme/default/` (`style.css` 427, `onyx.js` 419, `page.html` 75), embedded via `theme.go` |
 | Documentation | `README.md` 204 lines |
 | Formatting / static checks | `gofmt -l` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -coverprofile` passes; 88.9% of statements; ~0.28s |
+| Test baseline | `go test ./... -coverprofile` passes; 91.5% of statements; ~0.36s |
 
 Interpretation: the structural metrics are healthy and stable. `markdown.go` is the
 one outlier at 760 lines — roughly a third of all source and nearly double the next
 file — because it carries the entire bespoke block+inline parser plus text
 extraction. Coverage is high overall but unevenly distributed: the strongest coverage
-is on inline/link/config logic (`renderInline` 85.7%, `sanitizeHref`/`parseINI`/the
-resolvers mostly 95–100%, `findConfig` 88.9%, `resolveSources` 88.0%), while the
+is on inline/link/config logic (`renderInline` 98.6%, `sanitizeHref`/`parseINI`/the
+resolvers mostly 95–100%, `findConfig` 88.9%, `resolveSources` 88.0%) and, as of the
+2026-06-27 renderer pass, the previously weak renderer branches (`startsBlock`
+100%, `mathBlock` 100%, `parseMarkdownLink` 100%, `renderWiki` 96.3%). The
 weakest spots are now concentrated in filesystem output guards (`preparePublic`
-61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%) and a few renderer helpers
-(`extractTags` 54.5%, `startsBlock` 62.5%, `mathBlock` 72.2%,
-`parseMarkdownLink` 72.7%, `renderWiki` 77.8%).
+61.5%, `buildSite` 68.2%, `ensureNoJekyll` 66.7%) and tag extraction
+(`extractTags` 54.5%).
 
 Progress update 2026-06-27: `.github/workflows/ci.yml` now runs the README's
 documented Go checks on push and pull request, and guards the zero-dependency
@@ -55,6 +58,20 @@ content-folder-marked roots, explicit single/multi source handling, missing
 explicit sources, non-directory sources, and the no-content-directory error.
 This moved `findConfig` from 61.1% to 88.9% and `resolveSources` from 68.0% to
 88.0%.
+
+Progress update 2026-06-27: `markdown_test.go` now pins the under-covered
+renderer branches called out in Risk 1 and step 3. It covers every
+paragraph→block `startsBlock` transition, the single-line / open-fence-content /
+close-fence-content / unterminated `mathBlock` forms, `parseMarkdownLink`'s three
+rejection paths plus its success shape, and `renderWiki`'s asset-as-link,
+note-embed, and embed-falls-through-to-broken-link branches. It also adds the
+attribute-injection regression the review asked for: quote/angle characters in a
+link href, image `alt`, and wikilink alias are asserted to be HTML-escaped so they
+cannot break out of their attribute. This moved `startsBlock` 62.5%→100%,
+`mathBlock` 72.2%→100%, `parseMarkdownLink` 72.7%→100%, `renderWiki` 77.8%→96.3%,
+and `renderInline` 85.7%→98.6% (with incidental gains on the table-alignment
+helpers), lifting overall statement coverage from 88.9% to 91.5%. No behavior
+changed; these are characterization tests only.
 
 ## Structurally sound elements
 
@@ -102,15 +119,17 @@ Ranked by ongoing development cost.
    string concatenation, and safety depends on *every* branch remembering to call
    `html.EscapeString` on the right substrings (e.g. `onyx/markdown.go:114`,
    `510-602`). There is no structural guard that a new branch escapes its output; the
-   discipline is manual. Several branches are also the least-covered logic in the
-   package (`startsBlock` 62.5%, `mathBlock` 72.2%, `parseMarkdownLink` 72.7%,
-   `renderWiki` 77.8%).
-   *Consequence:* this is where correctness and injection regressions are most likely
-   to appear and most expensive to review, and where new Markdown features carry the
-   most risk. There is no *known* hole today (escaping and scheme checks are in place),
-   but every renderer change re-opens the question.
-   *Fix direction:* keep tests as the primary guardrail and add an attribute-injection
-   regression test when touching link/image rendering. If renderer churn continues,
+   discipline is manual. As of 2026-06-27 the previously least-covered branches are
+   pinned (`startsBlock` 100%, `mathBlock` 100%, `parseMarkdownLink` 100%,
+   `renderWiki` 96.3%, `renderInline` 98.6%) and an attribute-injection regression
+   test now guards link/image/wikilink escaping, so the manual discipline is at least
+   characterized by tests.
+   *Consequence:* this is still where correctness and injection regressions are most
+   likely to appear and most expensive to review, and where new Markdown features
+   carry the most risk. There is no *known* hole today (escaping and scheme checks are
+   in place, and now exercised), but every renderer change re-opens the question.
+   *Fix direction:* keep tests as the primary guardrail; extend the attribute-injection
+   cases whenever link/image rendering is touched. If renderer churn continues,
    introduce one tiny shared helper that emits an escaped `name="value"` attribute so
    the discipline becomes structural rather than per-branch. **Do not** replace the
    parser with a third-party Markdown library — that breaks the zero-dependency
@@ -191,10 +210,11 @@ Behavior-preserving unless a step says otherwise. Each step is independently use
    against temp directory trees: walk-up root discovery, `onyx.ini`-marked vs.
    content-folder-marked roots, explicit single/multi source, missing explicit source
    (must error), non-directory source. (Risk 2.)
-3. **Pin the under-covered renderer branches**: `parseMarkdownLink` with nested/empty
-   labels, `renderWiki` asset-vs-note-vs-broken resolution, unterminated `mathBlock`,
-   and `startsBlock` transitions. Add an attribute-injection regression test for
-   Markdown link/image rendering. (Risk 1.)
+3. **Done 2026-06-27: pin the under-covered renderer branches**: `parseMarkdownLink`
+   rejection/success paths, `renderWiki` asset-vs-note-embed-vs-broken resolution,
+   single-line/open/close/unterminated `mathBlock`, and every paragraph→block
+   `startsBlock` transition, plus an attribute-injection regression test for Markdown
+   link/image/wikilink rendering. (Risk 1.)
 4. **Document and pin `extractTags` current behavior**, including the code-block case,
    the way other known Markdown quirks are already pinned. Decide separately, and only
    with explicit authorization, whether to change it to skip fenced code. (Risk 3.)
