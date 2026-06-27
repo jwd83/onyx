@@ -76,14 +76,14 @@ func TestSanitizeHref(t *testing.T) {
 		{"javascript", "javascript:alert(1)", "#"},
 		{"javascript mixed case", "JavaScript:alert(1)", "#"},
 		{"javascript leading whitespace", "   javascript:alert(1)", "#"},
+		{"javascript internal tab", "java\tscript:alert(1)", "#"},
+		{"javascript internal newline", "java\nscript:alert(1)", "#"},
+		{"javascript internal null", "java\x00script:alert(1)", "#"},
 		{"data uri", "data:text/html,<script>", "#"},
 		{"data uri upper", "DATA:text/html;base64,xxx", "#"},
-		// Known limitation: the guard only strips a literal leading
-		// "javascript:"/"data:" scheme. An internal-whitespace bypass is NOT
-		// caught today. This pins current behavior so step 3's resolver
-		// consolidation cannot change it silently — revisit when hardening
-		// the HTML-safety model.
-		{"internal tab not caught", "java\tscript:alert(1)", "java\tscript:alert(1)"},
+		{"data uri internal whitespace", "da\nta:text/html,<script>", "#"},
+		{"other colon scheme is unchanged", "notes:today", "notes:today"},
+		{"absolute path before colon is unchanged", "/data:text/plain", "/data:text/plain"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -292,6 +292,20 @@ func TestResolveMarkdownHref(t *testing.T) {
 			t.Errorf("got %q, want diagram.png", got)
 		}
 	})
+
+	t.Run("dangerous scheme is blocked before asset resolution", func(t *testing.T) {
+		r, _ := testRenderer(v, "index.md")
+		if got := r.resolveMarkdownHref("javascript:alert(1)"); got != "#" {
+			t.Errorf("got %q, want #", got)
+		}
+	})
+
+	t.Run("dangerous scheme with control whitespace is blocked", func(t *testing.T) {
+		r, _ := testRenderer(v, "index.md")
+		if got := r.resolveMarkdownHref("java\tscript:alert(1)"); got != "#" {
+			t.Errorf("got %q, want #", got)
+		}
+	})
 }
 
 func TestResolveMarkdownAsset(t *testing.T) {
@@ -332,6 +346,14 @@ func TestResolveMarkdownAsset(t *testing.T) {
 		r, _ := testRenderer(v, "index.md")
 		if got := r.resolveMarkdownAsset("doc.pdf#page=2"); got != "doc.pdf#page=2" {
 			t.Errorf("got %q, want doc.pdf#page=2", got)
+		}
+	})
+
+	t.Run("dangerous data uri is blocked before asset resolution", func(t *testing.T) {
+		v := testVault(Config{}, []string{"index.md"}, nil)
+		r, _ := testRenderer(v, "index.md")
+		if got := r.resolveMarkdownAsset("data:text/html,<script>"); got != "#" {
+			t.Errorf("got %q, want #", got)
 		}
 	})
 }

@@ -173,6 +173,9 @@ func (r *MarkdownRenderer) resolveAsset(target string) (string, bool) {
 
 func (r *MarkdownRenderer) resolveMarkdownHref(dest string) string {
 	dest = strings.TrimSpace(dest)
+	if hasDangerousHrefScheme(dest) {
+		return "#"
+	}
 	if isExternalOrAbsolute(dest) || strings.HasPrefix(dest, "#") {
 		return sanitizeHref(dest)
 	}
@@ -199,6 +202,9 @@ func (r *MarkdownRenderer) resolveMarkdownHref(dest string) string {
 
 func (r *MarkdownRenderer) resolveMarkdownAsset(dest string) string {
 	dest = strings.TrimSpace(dest)
+	if hasDangerousHrefScheme(dest) {
+		return "#"
+	}
 	if isExternalOrAbsolute(dest) || strings.HasPrefix(dest, "#") {
 		return sanitizeHref(dest)
 	}
@@ -232,9 +238,35 @@ func isExternalOrAbsolute(s string) bool {
 }
 
 func sanitizeHref(href string) string {
-	lower := strings.ToLower(strings.TrimSpace(href))
-	if strings.HasPrefix(lower, "javascript:") || strings.HasPrefix(lower, "data:") {
+	if hasDangerousHrefScheme(href) {
 		return "#"
 	}
 	return href
+}
+
+func hasDangerousHrefScheme(href string) bool {
+	scheme := normalizedScheme(href)
+	return scheme == "javascript" || scheme == "data"
+}
+
+func normalizedScheme(href string) string {
+	href = strings.TrimSpace(href)
+	var b strings.Builder
+	for _, r := range href {
+		switch {
+		case r == ':':
+			return strings.ToLower(b.String())
+		case r == '/' || r == '?' || r == '#':
+			return ""
+		case isASCIIControlOrSpace(r):
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return ""
+}
+
+func isASCIIControlOrSpace(r rune) bool {
+	return r >= 0 && r <= ' ' || r == 0x7f
 }

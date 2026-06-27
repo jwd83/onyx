@@ -25,6 +25,8 @@ func TestRenderInline(t *testing.T) {
 		{"bare url", "see https://ex.com now", `see <a href="https://ex.com">https://ex.com</a> now`},
 		{"bare url trailing punctuation excluded", "https://ex.com.", `<a href="https://ex.com">https://ex.com</a>.`},
 		{"markdown link external", "[go](https://go.dev)", `<a href="https://go.dev">go</a>`},
+		{"markdown link dangerous scheme blocked", "[bad](javascript:alert)", `<a href="#">bad</a>`},
+		{"markdown link dangerous tab scheme blocked", "[bad](java\tscript:alert)", `<a href="#">bad</a>`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

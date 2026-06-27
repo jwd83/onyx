@@ -1,205 +1,197 @@
 # Architectural Review — Onyx
 
-*Reviewed 2026-06-25 against `master` @ `73c2b90`.*
+*Reviewed 2026-06-26 local EDT against `master` @ `47518fb`.*
 
-Onyx is a deliberately small Go static-site generator for Markdown vaults. Its
-strongest architectural asset is also its product promise: one installed command,
-one binary, no third-party dependencies, no npm, no runtime server. That promise
-is real in the current codebase and should remain a hard constraint for any
-improvement campaign. The main carrying cost is not a wrong design; it is that
-several mature subsystems now occupy one 3,141-line file. The best order of
-attack is to add focused stdlib-only tests around the markdown/link/config
-surfaces, split the existing package into subsystem files, then consolidate the
-duplicated path-resolution logic. Related active plan: this document supersedes
-the previous active review in `plans/in-progress/architectural-review.md`, which
-was written against `f802ac2`.
+Onyx has made the jump the previous review was aiming for: the project is still
+a zero-dependency, single-binary Go static-site generator, but it is no longer
+presented as a 3,141-line monolith. The source is now split across focused files,
+the built-in theme lives as real embedded assets, the link/asset resolver paths
+share mechanics, and the highest-risk inline/link/config surfaces have direct
+tests. The dominant carrying cost has shifted from "too much in one file" to a
+smaller, sharper set of risks: block-level Markdown behavior, theme/static
+override behavior, and the still-manual HTML safety model needs continued
+regression coverage. The related earlier reviews remain in
+`plans/in-progress/architectural-review-glm.md` and
+`plans/in-progress/architectural-review-opus.md`; this file is the refreshed
+current assessment.
 
 ## Snapshot
 
 | Metric | Value |
 | --- | --- |
-| Repository shape | 10 tracked files; Go command in `onyx/`; vanity import HTML at `index.html` and `onyx/index.html` |
-| Go module | `onyx.jwd.me`, package import path `onyx.jwd.me/onyx` |
-| Go version | `go 1.26` in `go.mod`; local toolchain `go1.26.3 darwin/arm64` |
-| Third-party dependencies | **0**; `go list` shows only stdlib imports and there is no `go.sum` |
-| Source footprint | `onyx/onyx.go` 3,141 lines; 98 package functions, 15 methods, 14 struct types |
-| Test footprint | `onyx/onyx_test.go` 295 lines; 9 `Test*` functions, mostly end-to-end temp-dir builds |
-| Embedded defaults | `defaultPageTemplate` 77 lines, `defaultCSS` 429 lines, `defaultJS` 420 lines; 926 lines total, about 29% of `onyx.go` |
-| Documentation | `README.md` 85 lines; no `docs/` tree; active plan at this file |
-| Formatting/static checks | `gofmt -l onyx/onyx.go onyx/onyx_test.go` clean; `go vet ./...` passes |
-| Test baseline | `go test ./... -cover` passes; coverage 60.5% of statements |
+| Repository shape | 28 tracked files; Go command in `onyx/`; vanity import HTML at root and `onyx/index.html`; three in-progress review artifacts |
+| Go module | `onyx.jwd.me`; `go 1.21`; tested with `go1.26.3 darwin/arm64` |
+| Third-party dependencies | **0**; no `go.sum`; imports are stdlib-only |
+| Source footprint | 11 non-test Go files, 2,385 lines; largest: `markdown.go` 757, `vault.go` 412, `links.go` 272, `config.go` 265; `onyx.go` is now 71 lines |
+| Test footprint | 4 Go test files, 806 lines, 17 `Test*` functions |
+| Embedded default theme | 921 real asset lines under `onyx/theme/default/`, embedded through `theme.go`: CSS 427, JS 419, page template 75 |
+| Documentation | `README.md` 83 lines; active review refresh at this file |
+| Formatting/static checks | `gofmt -l $(rg --files -g '*.go')` clean; `go vet ./...` passes |
+| Test baseline | `go test ./... -coverprofile=/tmp/onyx-cover.out` passes in 0.310s; coverage is 75.7% of statements |
 
-Interpretation: the project is still compact and dependency-clean, but no
-longer "tiny" internally. The 3,141-line source file contains command wiring,
-config and INI parsing, source discovery, vault indexing, output safety checks,
-page writing, navigation, search/graph JSON, a Markdown renderer, wikilink and
-asset resolution, and the built-in HTML/CSS/JS theme. The tests give useful
-user-level coverage for builds, drafts, relative URLs, math, tables, and
-multi-source sections, but the coverage profile shows several high-change
-helpers are barely or not directly tested: `renderInline` 18.6%,
-`resolveMarkdownHref` 0%, `resolveMarkdownAsset` 0%, `resolveAsset` 0%,
-`consumeBareURL` 0%, `parseMarkdownLink` 0%, `renderBlockquote` 0%, and
-`copyDir` 0%.
+Interpretation: the earlier structural campaign paid off. Since the previous
+`73c2b90` review baseline, the repo lowered the Go directive (`4eff5ff`), split
+the former monolith across subsystem files (`afef272`), extracted the theme into
+real embedded files (`bac7313` and `32b0573`), added 487 lines of parser and
+resolver tests (`12bd59a`), consolidated resolver mechanics (`4da549c`), and
+documented the load-bearing build order (`47518fb`). Function coverage confirms
+the improvement where it mattered most: `renderInline` is now 85.7% covered,
+`parseINI` and `sanitizeHref` are 100%, and the link/asset resolvers are mostly
+95-100%. The remaining weak spots are concentrated and visible: `renderBlocks`
+47.4%, `renderBlockquote` 0%, `renderListItem` 0%, `sanitizeClass` 0%,
+`copyDir` 0%, `isBlankFile` 0%, `updateGeneratedHome` 18.8%, and `boolOr` 50%.
 
 ## Structurally sound elements
 
-- **The no-dependency contract is intact and valuable.** `go.mod` has no
-  `require` block, imports are stdlib-only, and the README's "no npm, no build
-  system, no runtime server" claim matches the code. This is a constraint to
-  preserve, not technical debt to remove.
-- **The top-level build pipeline is clear.** `buildSite` (around line 420) reads
-  as a stable sequence: protect existing root output, ensure `.nojekyll`, load
-  the vault, render pages, compute backlinks, prepare `public/`, write assets,
-  write pages, then emit search and graph data. That linear shape is simple and
-  should survive refactoring.
-- **Generated-output safety is treated as architecture.** `ensureRootIndexWritable`
-  (around line 458) and `preparePublic` (around line 499) refuse to overwrite
-  unmarked user content. The tests assert the public-directory guard. This is a
-  load-bearing behavioral contract.
-- **Relative URL behavior is a first-class invariant.** `relativeRoot` and
-  `relativeURL` (around lines 2192-2212) support GitHub Pages project paths, and
-  tests assert that nested pages link back to `../../public/...` instead of
-  root-relative `/public/...`.
-- **The source-folder model is compact but expressive.** `defaultSources`,
-  `resolveSources`, `Config.Multi`, and `sourcePrefix` handle single-source,
-  multi-source, and explicit-source builds without introducing configuration
-  machinery. The comments explain the important path distinction.
-- **Tests exercise real workflows.** The existing tests build temporary sites
-  through `run`, then inspect generated files. That style catches integration
-  regressions that isolated unit tests would miss.
+- **The no-dependency, single-binary contract survived the refactor.** `go.mod`
+  has no `require` block, the default theme is compiled with stdlib `go:embed`,
+  and the README's "no npm, no build system, no runtime server" claim still
+  matches the code. This remains a hard product constraint.
+- **Subsystem files now match the mental model.** `build.go`, `config.go`,
+  `vault.go`, `markdown.go`, `links.go`, `nav.go`, `assets.go`, `page.go`,
+  `search_graph.go`, and `theme.go` keep `package main` but give the project a
+  navigable table of contents. That is the right amount of architecture for a
+  small command.
+- **The build pipeline is explicit and documented.** `buildSite` now carries a
+  clear load-order comment at `onyx/build.go:11`, and `loadVault` documents the
+  `Page` lifecycle at `onyx/vault.go:45`. The linear flow remains a strength:
+  validate outputs, load pages, render, compute backlinks, then write.
+- **Resolver behavior has a real safety net.** `onyx/links_test.go` covers
+  wikilink resolution, asset resolution, Markdown hrefs, anchors, ambiguous
+  basenames, current-directory preference, and warning behavior. That directly
+  addresses one of the riskiest old gaps.
+- **Inline Markdown behavior is now pinned.** `onyx/markdown_test.go` covers
+  strong/emphasis/code escaping, bare URLs, Markdown links, wikilinks, aliases,
+  headings, broken links, and image embeds. It also deliberately pins known
+  behavior gaps such as single-underscore emphasis and loose asterisk pairing.
+- **Generated-output safety and relative URLs remain load-bearing tests.**
+  Integration tests still assert refusal to overwrite an unmarked `public/`
+  directory, creation of `.nojekyll`, relative `public/onyx.css` and
+  `public/onyx.js` paths, nested-page `../../` links, and cross-source paths.
+- **Theme source is editable as source.** The default CSS/JS/template now live
+  under `onyx/theme/default/` and are embedded from `theme.go:11-18`. This
+  removes the old "frontend trapped in Go string literals" problem without
+  changing install or runtime behavior.
 
 ## Structural risks and costs
 
-1. **One source file now carries too many subsystem boundaries.**
-   *Evidence:* `onyx/onyx.go` is 3,141 lines and contains CLI entrypoints,
-   config parsing, vault loading, output safety, template loading, page writing,
-   nav/search/graph emission, markdown block parsing, inline parsing, wikilink
-   and asset resolution, and 926 lines of embedded default assets.
-   *Consequence:* unrelated changes collide in one file, diffs are harder to
-   review, and new contributors must build their own mental table of contents.
-   The design is simple, but the file shape makes routine work more expensive
-   than it needs to be.
-   *Fix direction:* keep `package main` and split by existing responsibilities:
-   `config.go`, `vault.go`, `output.go`, `templates.go`, `nav.go`,
-   `search_graph.go`, `markdown.go`, `links.go`, and `assets.go`. This changes
-   no public behavior, adds no dependencies, and preserves the same binary and
-   `go run onyx.jwd.me/onyx@latest` path.
+1. **The remaining test gap is now block/output behavior, not inline/link behavior.**
+   *Evidence:* Function coverage shows `renderBlockquote`, `renderListItem`,
+   `stripBlockquoteMarker`, `dropFirstNonBlank`, `sanitizeClass`, `copyDir`, and
+   `isBlankFile` at 0%. `renderBlocks` is only 47.4%, while `updateGeneratedHome`
+   is 18.8%. The existing integration tests cover math and tables, but not
+   callouts, blockquotes, task-list rendering, code-fence class sanitization,
+   generated single-source home output, or theme static copying.
+   *Consequence:* the most likely future regressions have moved to block-level
+   Markdown and output/theme edge cases. A change to callout rendering, task
+   checkboxes, fenced code classes, generated indexes, or theme overrides could
+   slip through even though the headline coverage number now looks healthy.
+   *Fix direction:* add focused `Render` table tests for blockquotes/callouts,
+   task lists, fenced code info strings, horizontal rules, generated-home HTML,
+   and duplicate heading IDs. Add build-level tests for custom theme overrides,
+   `theme/static` copying, and blank root `index.html` handling.
 
-2. **The highest-risk parsing and linking code is under-tested.**
-   *Evidence:* Total statement coverage is 60.5%, but `renderInline` is 18.6%.
-   Markdown links, bare URLs, image paths, asset resolution, external-link
-   sanitization, blockquotes/callouts, task-list items, theme static copying,
-   and resolver ambiguity have little or no direct coverage.
-   *Consequence:* the code most likely to change is the least protected. A
-   behavior-preserving file split would be mostly mechanical, but a small edit
-   to inline parsing or link resolution could silently alter output.
-   *Fix direction:* before structural edits, add focused table-driven tests for
-   `renderInline`, `resolveMarkdownHref`, `resolveMarkdownAsset`, `resolveAsset`,
-   `parseINI`, blockquotes/callouts, task-list items, and theme overrides. Keep
-   the existing integration tests; add unit tests only where they make later
-   refactors safer. No parser library is needed.
+2. **The HTML/href safety model is still manual, but dangerous schemes are now centralized.**
+   *Evidence:* Markdown output is constructed by hand and then stored as
+   `template.HTML` (`onyx/vault.go:379`, `onyx/page.go:102`). Most branches call
+   `html.EscapeString`, and raw Markdown HTML is not passed through. Dangerous
+   `javascript:` and `data:` schemes now route through a shared stdlib-only
+   helper in `onyx/links.go` before Markdown destinations can fall back to asset
+   paths, and tests cover tab/newline/NUL scheme bypasses plus rendered Markdown
+   links.
+   *Consequence:* there is no known raw-HTML or dangerous-scheme hole today, but
+   link safety still depends on current and future rendering branches using the
+   central helper and the right escaping calls.
+   *Fix direction:* keep href handling centralized and add attribute-injection
+   regression tests when touching Markdown link/image rendering. If renderer
+   churn continues, consider a tiny shared escaping helper for link and image
+   attributes.
 
-3. **Path resolution has duplicated rules with subtly different semantics.**
-   *Evidence:* `resolveNote`, `resolveAsset`, `resolveMarkdownHref`, and
-   `resolveMarkdownAsset` (roughly lines 1908-2067) each build candidate paths
-   from current page/source paths, normalize case, handle anchors, and decide
-   whether to warn. Notes use `nearestPage`; assets sort matches by distance and
-   warn separately.
-   *Consequence:* fixes to one link form can miss another. The distinction
-   between `PageRel`, `SourceRel`, source prefixes, anchors, assets, and notes
-   is valid, but it is currently encoded four times.
-   *Fix direction:* after tests land, extract a small candidate-resolution helper
-   that accepts current directory, target, exact index, basename index, and an
-   ambiguity policy. Keep note and asset behavior explicit at the call sites,
-   but share the path-cleaning and nearest-match machinery.
+3. **Theme extraction is complete, but the theme extension surface is thinly verified.**
+   *Evidence:* `writeThemeOrDefault` is 60% covered and `copyDir` is 0% covered.
+   The default JS is a real 419-line file, but no check verifies it parses after
+   edits. The README documents `theme/` overrides and `theme/static`, while tests
+   primarily exercise the built-in default asset paths.
+   *Consequence:* the new file layout is much better for editing, but mistakes
+   in override lookup, static asset copying, or JS syntax may only show up after
+   a generated site is opened in a browser.
+   *Fix direction:* add one integration test that supplies custom `theme/style.css`,
+   `theme/onyx.js`, `theme/page.html`, and `theme/static/*`, then asserts output
+   bytes and relative links. If a JS runtime is available in development, add an
+   optional local `node --check onyx/theme/default/onyx.js` note; do not make the
+   project depend on Node.
 
-4. **`Page` state changes across the pipeline are order-sensitive.**
-   *Evidence:* `loadVault` sets `PageRel`, indexes maps, chooses or generates
-   home, assigns canonical `URL` and `SourceURL`, then mutates generated home
-   `HTML`. `renderVault` skips generated pages. `computeBacklinks` derives a
-   local `byRel` map from rendered outgoing links. `writePage` copies a `Page`
-   and changes the view copy's URLs to be relative.
-   *Consequence:* the current order works, but the invariant is carried in the
-   reader's head. A future feature such as custom output paths, aliases, or
-   alternate home generation could easily break when a field is read before it
-   has reached its expected lifecycle phase.
-   *Fix direction:* document the build-order invariant near `buildSite` and
-   `loadVault`. If churn continues, separate canonical page data from
-   per-render view data more deliberately. Do not introduce a heavy builder or
-   framework; the linear pipeline is a strength.
+4. **`Page` mutation is documented but still spread across the pipeline.**
+   *Evidence:* `loadVault` sets `PageRel`, `URL`, `SourceURL`, home status, and
+   generated-home HTML; `renderVault` fills `HTML`, `Text`, `Excerpt`,
+   `Headings`, `Tags`, `HasMath`, and `Outgoing`; `computeBacklinks` mutates
+   backlinks; `writePage` copies a page and rewrites URL fields for the template
+   view. The comments now describe the order, which is a major improvement.
+   *Consequence:* ordinary maintenance is fine, but features like aliases,
+   custom output paths, drafts by folder, or alternate page views would still
+   require careful cross-file reasoning about which `Page` fields are canonical
+   and which are render-time or view-time.
+   *Fix direction:* leave the current model alone until a feature forces it. If
+   output-path work arrives, introduce a narrow page-view constructor or helper
+   around the `writePage` copy instead of a broad builder framework.
 
-5. **Built-in assets are valid source files trapped inside Go strings.**
-   *Evidence:* `defaultPageTemplate`, `defaultCSS`, and `defaultJS` start around
-   lines 2216, 2293, and 2722. The JS contains search and graph behavior; the
-   CSS contains the whole default theme.
-   *Consequence:* frontend edits share the same diff context as Go parser
-   changes, syntax mistakes are only caught by rendering a site in a browser,
-   and the theme cannot be inspected as normal `*.css`/`*.js` files.
-   *Fix direction:* either move the constants to `assets.go` as a first pass or,
-   better, use stdlib `//go:embed` to keep real `theme/default/page.html`,
-   `style.css`, and `onyx.js` files compiled into the binary. This preserves the
-   no-dependency and single-binary contract.
-
-6. **The public configuration surface has a few drift signals.**
+5. **The public config contract still has drift signals.**
    *Evidence:* README documents `site_title`, `source`, `theme`, `search`,
-   `graph`, and `show_source`. Tests still write `base_url = /` in several
-   fixtures, but the implementation ignores unknown keys and has no `base_url`
-   behavior. `boolOr` also accepts legacy-ish `build.search`, `build.graph`,
-   and `publish_raw_markdown` keys that are not documented.
-   *Consequence:* this is not currently a bug, but it makes the true contract
-   less obvious. Future config changes may accidentally preserve, remove, or
-   document the wrong keys.
-   *Fix direction:* clean stale test fixture keys and add a short config contract
-   table in tests or README. Keep unknown-key tolerance unless there is a clear
-   product reason to reject it.
+   `graph`, and `show_source`. The implementation also accepts `build.search`,
+   `build.graph`, and `publish_raw_markdown` (`onyx/config.go:111-113`), while
+   several integration fixtures still include ignored `base_url = /` keys.
+   Unknown keys are tolerated.
+   *Consequence:* this is not a current bug, but it leaves the true compatibility
+   contract fuzzy. Future config edits may accidentally preserve, remove, or
+   document legacy keys without an explicit decision.
+   *Fix direction:* remove stale `base_url` fixture lines, add config tests for
+   legacy toggles or deliberately drop/document them, and add a short README
+   development note saying unknown keys are tolerated intentionally if that is
+   the chosen contract.
 
 ### Smaller frictions
 
-- `stripInlineMarkdown` and `extractTags` compile regexps per call. Hoisting
-  them to package-level `regexp.MustCompile` vars is a small, safe cleanup once
-  tests are in place.
-- `isBlankFile` has UTF-16LE handling with 0% coverage. Either test it or remove
-  it if that behavior is no longer intentional.
-- `copyDir` and theme static asset handling have 0% coverage despite being the
-  extension point for custom themes.
-- `countPages` is used only for the success message. It is fine as-is, but it
-  should not become a source of release logic.
-- The two vanity-import HTML files are intentionally simple but easy to confuse
-  with generated site HTML. A short comment in README's development section
-  would help.
+- `stripInlineMarkdown` and `extractTags` still compile regexps per call at
+  `onyx/markdown.go:677` and `onyx/markdown.go:716`. Hoist them to
+  package-level `regexp.MustCompile` vars once the current tests are green.
+- `isBlankFile` still has an untested UTF-16LE blank-file branch
+  (`onyx/build.go:96-103`). Either test it or remove it if the behavior is not
+  intentional.
+- The repo now has three in-progress review files and no canonical
+  `plans/in-progress/architectural-review.md`. That is fine for comparison, but
+  a future cleanup should pick one active review or archive the older variants.
+- There is no CI/workflow file. For a project this small, a basic `go test`,
+  `go vet`, and `gofmt -l` workflow would give high confidence with low upkeep.
 
 ## Recommended order of attack
 
-1. **Add focused safety tests before moving code.** Cover inline markdown,
-   markdown links/images, asset resolution, ambiguous note/asset basenames,
-   callouts, task lists, theme overrides, and config parsing. Keep using only
-   Go's stdlib test tools.
-2. **Split `onyx.go` by subsystem inside the same package.** Preserve the
-   current binary, module path, CLI behavior, and no-dependency contract. This
-   should be mostly mechanical after step 1.
-3. **Extract the built-in theme into real files with stdlib embedding.** Use
-   `//go:embed` for the default template/CSS/JS, or move strings to `assets.go`
-   first if a smaller step is preferred. Verify generated asset bytes before
-   and after.
-4. **Consolidate resolver mechanics.** Share candidate path generation,
-   basename lookup, nearest-match scoring, and ambiguity warning paths between
-   note and asset resolution while keeping their product behavior explicit.
-5. **Clarify page lifecycle invariants.** Add concise comments around
-   `buildSite`/`loadVault`; consider separating canonical URLs from render-view
-   URLs if future work touches output paths.
-6. **Clean low-risk hot spots.** Hoist regexps, remove stale `base_url` test
-   fixture keys, and either test or simplify the UTF-16 blank-file branch.
-7. **Document contributor constraints.** Add a short development note that says
-   architecture changes must preserve stdlib-only dependencies, single-binary
-   install, relative URLs, and generated-output safety.
+1. **Finish the current test net around uncovered block/output behavior.** Add
+   focused tests for callouts, blockquotes, task-list items, fenced code class
+   sanitization, generated home output, `isBlankFile`, and `theme/static`
+   copying. This is the direct successor to the old parser/resolver test step.
+2. **Add a custom-theme integration test.** Exercise `style.css`, `onyx.js`,
+   `page.html`/`home.html`, and copied static files so the new `go:embed` asset
+   layout stays trustworthy.
+3. **Hoist the regexps and clean the small hot spots.** Move the three per-call
+   regexps to package vars; either test or simplify the UTF-16 blank-file branch;
+   keep `countPages` as success-message-only code.
+4. **Clarify the config compatibility contract.** Remove stale `base_url`
+   fixtures, decide whether legacy keys are supported, and document/test that
+   decision.
+5. **Document contributor guardrails.** Add a short README development note or
+   lightweight CI workflow covering `go test ./...`, `go vet ./...`, `gofmt -l`,
+   zero third-party dependencies, relative URL behavior, and generated-output
+   safety.
+6. **Archive or consolidate review artifacts when this campaign is done.** Keep
+   comparison reviews while useful, but do not let old model-specific reviews
+   become competing active plans.
 
 ## Closing assessment
 
-Onyx should not be "modernized" by adding parser libraries, frontend tooling,
-or a broader framework. Its architecture is strongest where it is restrained:
-stdlib-only Go, a linear build pipeline, relative static output, and conservative
-overwrite safety. The dominant risk is that the implementation has outgrown the
-single-file presentation and the tests are thinnest around the parsing/linking
-code that future changes will touch most. A short campaign of focused tests,
-same-package file splits, stdlib embedding, and resolver cleanup would make the
-project easier to change while keeping the no-dependency promise intact.
+The architecture is in a much better place than the previous baseline. Onyx no
+longer needs a monolith-splitting campaign; it needs a finishing pass that makes
+the newly modular code as well protected at the block/output/theme edges as it
+now is at the inline/link/config edges. The best leverage point is tests first,
+then small hardening and cleanup. Preserve the restraint that makes Onyx good:
+stdlib-only Go, one installed command, relative static output, conservative
+overwrite safety, and a readable linear build pipeline.
