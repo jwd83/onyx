@@ -83,6 +83,7 @@
   var modal = document.getElementById("onyx-graph-modal");
   var canvas = document.getElementById("onyx-graph-canvas");
   var openBtn = document.getElementById("onyx-graph-open");
+  var countEl = document.getElementById("onyx-graph-count");
   if (!modal || !canvas) return;
 
   var root = window.ONYX_ROOT || "";
@@ -100,13 +101,11 @@
   var alpha = 0;
   var alphaMin = 0.0015;
 
-  var scale = 1, offsetX = 0, offsetY = 0;
+  var scale = 1, fitScale = 1, offsetX = 0, offsetY = 0;
   var dpr = 1;
   var hoverNode = null, dragNode = null, panning = false;
   var pressX = 0, pressY = 0, lastX = 0, lastY = 0, moved = false;
   var colors = {};
-
-  function radiusOf(n) { return 3 + Math.sqrt(n.degree) * 1.7; }
 
   function load() {
     if (loaded || loading) return;
@@ -129,9 +128,11 @@
     nodes = (data.nodes || []).map(function (n, i) {
       var ang = i * 2.3999632;
       var rad = 16 + Math.sqrt(i + 1) * 16;
+      var title = n.title || n.id;
       var node = {
         id: n.id,
-        title: n.title || n.id,
+        title: title,
+        label: title.length > 34 ? title.slice(0, 33) + "…" : title,
         url: n.url || "",
         degree: n.degree || 0,
         x: w / 2 + Math.cos(ang) * rad,
@@ -139,6 +140,7 @@
         vx: 0, vy: 0,
         neighbors: new Set()
       };
+      node.r = 3.5 + Math.sqrt(node.degree) * 2;
       nodeById.set(n.id, node);
       return node;
     });
@@ -146,12 +148,16 @@
       return { source: nodeById.get(l.source), target: nodeById.get(l.target) };
     }).filter(function (l) { return l.source && l.target; });
     links.forEach(function (l) { l.source.neighbors.add(l.target); l.target.neighbors.add(l.source); });
+    if (countEl) {
+      var plural = function (count, word) { return count + " " + word + (count === 1 ? "" : "s"); };
+      countEl.textContent = nodes.length ? plural(nodes.length, "note") + " · " + plural(links.length, "link") : "";
+    }
   }
 
   function tick() {
     alpha += (0 - alpha) * 0.0228;
-    var i, j, a, b, dx, dy, d2, dist, f, w;
-    var charge = -60;
+    var i, j, a, b, dx, dy, d2, dist, f, w, minD;
+    var charge = -120;
     for (i = 0; i < nodes.length; i++) {
       a = nodes[i];
       for (j = i + 1; j < nodes.length; j++) {
@@ -162,11 +168,18 @@
         // runaway impulse (without this the layout diverges to infinity).
         if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = dx * dx + dy * dy + 1; }
         w = charge * alpha / d2;
+        // Overlapping circles shove apart harder than plain charge so labels
+        // and dots keep breathing room around dense hubs.
+        minD = a.r + b.r + 10;
+        if (d2 < minD * minD) {
+          dist = Math.sqrt(d2);
+          w -= (minD - dist) / dist * alpha * 0.7;
+        }
         a.vx += dx * w; a.vy += dy * w;
         b.vx -= dx * w; b.vy -= dy * w;
       }
     }
-    var linkDist = 46, linkStr = 0.4;
+    var linkDist = 64, linkStr = 0.4;
     for (i = 0; i < links.length; i++) {
       a = links[i].source; b = links[i].target;
       dx = b.x - a.x; dy = b.y - a.y;
@@ -213,6 +226,7 @@
     scale = Math.min((w - pad) / gw, (h - pad) / gh);
     if (!isFinite(scale) || scale <= 0) scale = 1;
     scale = Math.max(0.15, Math.min(scale, 2.2));
+    fitScale = scale;
     offsetX = w / 2 - ((minX + maxX) / 2) * scale;
     offsetY = h / 2 - ((minY + maxY) / 2) * scale;
   }
@@ -225,64 +239,140 @@
     colors.focus = v("--graph-focus", "#8a5a35");
     colors.node = v("--graph-node-solid", "#8c867a");
     colors.label = v("--graph-label", "#4a4740");
+    colors.halo = v("--graph-halo", v("--bg", "#f7f5ef"));
+    colors.grid = v("--graph-grid", "rgba(32,32,29,0.06)");
+  }
+
+  // A faint dot grid in world coordinates: it pans and zooms with the nodes,
+  // giving the eye a spatial anchor. Spacing doubles/halves with zoom so the
+  // on-screen density stays roughly constant at any scale.
+  function drawGrid(w, h) {
+    var step = 56;
+    while (step * scale < 34) step *= 2;
+    while (step * scale > 68) step /= 2;
+    var x1 = (w - offsetX) / scale, y1 = (h - offsetY) / scale;
+    var gx0 = Math.floor((-offsetX / scale) / step) * step;
+    var gy0 = Math.floor((-offsetY / scale) / step) * step;
+    var r = 1.1 / scale;
+    ctx.fillStyle = colors.grid;
+    ctx.beginPath();
+    for (var gx = gx0; gx <= x1; gx += step) {
+      for (var gy = gy0; gy <= y1; gy += step) {
+        ctx.moveTo(gx + r, gy);
+        ctx.arc(gx, gy, r, 0, Math.PI * 2);
+      }
+    }
+    ctx.fill();
   }
 
   function draw() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
 
-    var focus = hoverNode;
-    var i, n;
+    drawGrid(w, h);
 
+    if (loaded && !nodes.length) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.font = "13px ui-sans-serif, system-ui, -apple-system, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = colors.label;
+      ctx.globalAlpha = 0.7;
+      ctx.fillText("No linked notes yet.", w / 2, h / 2);
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    var focus = hoverNode;
+    var i, n, s, t;
+
+    // Links go down in two batched passes: the resting set in one path, then
+    // (while hovering) the focused node's edges bright on top.
+    ctx.lineCap = "round";
     ctx.lineWidth = 1 / scale;
+    ctx.strokeStyle = colors.link;
+    ctx.globalAlpha = focus ? 0.1 : 1;
+    ctx.beginPath();
     for (i = 0; i < links.length; i++) {
-      var s = links[i].source, t = links[i].target;
-      var active = focus && (s === focus || t === focus);
-      ctx.strokeStyle = active ? colors.current : colors.link;
-      ctx.globalAlpha = focus ? (active ? 0.9 : 0.12) : 1;
-      ctx.beginPath();
+      s = links[i].source; t = links[i].target;
+      if (focus && (s === focus || t === focus)) continue;
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
+    }
+    ctx.stroke();
+    if (focus) {
+      ctx.lineWidth = 1.6 / scale;
+      ctx.strokeStyle = colors.current;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      for (i = 0; i < links.length; i++) {
+        s = links[i].source; t = links[i].target;
+        if (s !== focus && t !== focus) continue;
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(t.x, t.y);
+      }
       ctx.stroke();
     }
 
+    ctx.lineWidth = 1.4 / scale;
+    ctx.strokeStyle = colors.halo;
     for (i = 0; i < nodes.length; i++) {
       n = nodes[i];
       var isCurrent = n.id === currentId;
       var related = focus && (n === focus || focus.neighbors.has(n));
-      var r = radiusOf(n);
+      var r = n.r;
       if (n === focus) r += 1.5 / scale + 1.5;
+
+      // Soft beacon behind the reader's current note, and a matching glow
+      // behind whichever node is hovered.
+      if (isCurrent || n === focus) {
+        ctx.globalAlpha = focus && !related ? 0.12 : (isCurrent ? 0.28 : 0.18);
+        ctx.fillStyle = isCurrent ? colors.current : colors.focus;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 6.5 / scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       ctx.globalAlpha = focus ? (related ? 1 : 0.22) : 1;
       ctx.fillStyle = isCurrent ? colors.current : (related ? colors.focus : colors.node);
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fill();
-      if (isCurrent) {
-        ctx.globalAlpha = focus ? (related ? 1 : 0.4) : 1;
-        ctx.lineWidth = 2 / scale;
-        ctx.strokeStyle = colors.current;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4 / scale, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      // Rim in the backdrop tone cuts each dot out from the lines beneath it.
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
 
     var fontPx = 11 / scale;
-    ctx.font = fontPx + "px ui-sans-serif, system-ui, -apple-system, sans-serif";
+    ctx.font = "500 " + fontPx + "px ui-sans-serif, system-ui, -apple-system, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillStyle = colors.label;
-    var showAll = scale > 1.25;
+    ctx.strokeStyle = colors.halo;
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3 / scale;
+    // Small graphs and hubs stay labeled at rest; rank-and-file labels fade in
+    // as you zoom past ~1x. Everything melts away when zoomed well below the
+    // fitted overview (labels would just pile into a smudge), measured against
+    // fitScale so the behavior holds for any vault size.
+    var smallGraph = nodes.length <= 40;
+    var zoomT = Math.max(0, Math.min(1, (scale - 0.8) / 0.6));
+    var farT = Math.max(0, Math.min(1, (scale / fitScale - 0.4) / 0.3));
     for (i = 0; i < nodes.length; i++) {
       n = nodes[i];
       var rel = focus && (n === focus || focus.neighbors.has(n));
-      var hub = n.degree >= 7;
-      var show = rel || n.id === currentId || (!focus && (hub || showAll));
-      if (!show) continue;
-      ctx.globalAlpha = focus ? (rel ? 1 : 0.18) : (n.id === currentId ? 1 : 0.8);
-      ctx.fillText(n.title, n.x, n.y + radiusOf(n) + 3 / scale);
+      var la;
+      if (focus) la = rel ? 1 : 0.12;
+      else if (n.id === currentId) la = farT;
+      else if (smallGraph || n.degree >= 7) la = 0.85 * farT;
+      else la = 0.85 * zoomT;
+      if (la < 0.03) continue;
+      ctx.globalAlpha = la;
+      var ly = n.y + n.r + 4.5 / scale;
+      ctx.strokeText(n.label, n.x, ly);
+      ctx.fillText(n.label, n.x, ly);
     }
     ctx.globalAlpha = 1;
   }
@@ -339,7 +429,7 @@
     var best = null, bestD = Infinity;
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
-      var r = radiusOf(n) + 4 / scale;
+      var r = n.r + 4 / scale;
       var dx = n.x - wx, dy = n.y - wy, d = dx * dx + dy * dy;
       if (d <= r * r && d < bestD) { bestD = d; best = n; }
     }

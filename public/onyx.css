@@ -24,6 +24,10 @@
   --graph-current: var(--accent);
   --graph-focus: var(--accent-2);
   --graph-label: #4a4740;
+  --graph-halo: #f6f4ec;
+  --graph-grid: rgb(32 32 29 / 6%);
+  --graph-bg-center: #faf8f3;
+  --graph-bg-edge: #f1eee4;
   --graph-backdrop: rgb(24 23 20 / 55%);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -53,6 +57,10 @@
   --graph-current: var(--accent);
   --graph-focus: var(--accent-2);
   --graph-label: #d8d3c5;
+  --graph-halo: #131711;
+  --graph-grid: rgb(240 239 230 / 7%);
+  --graph-bg-center: #181d16;
+  --graph-bg-edge: #0d100c;
   --graph-backdrop: rgb(2 4 3 / 68%);
 }
 
@@ -460,7 +468,19 @@ a:hover { color: var(--accent-2); }
   background: var(--panel);
 }
 .onyx-graph-title { font-weight: 750; }
-.onyx-graph-hint { color: var(--muted); font-size: .8rem; margin-right: auto; }
+/* The count carries the auto margin (not the hint) so the close button stays
+   pinned right even when the hint is hidden on narrow screens. */
+.onyx-graph-count { color: var(--muted); font-size: .8rem; margin-right: auto; }
+.onyx-graph-count:not(:empty)::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: .9em;
+  margin-right: .75rem;
+  vertical-align: -.1em;
+  background: var(--line);
+}
+.onyx-graph-hint { color: var(--muted); font-size: .8rem; }
 .onyx-graph-close {
   border: 0;
   background: transparent;
@@ -477,7 +497,9 @@ a:hover { color: var(--accent-2); }
   width: 100%;
   height: 100%;
   display: block;
-  background: var(--bg);
+  /* Soft center-lit gradient; --graph-halo (label/rim paint) should sit
+     between these two tones so halos melt into the backdrop. */
+  background: radial-gradient(120% 100% at 50% 32%, var(--graph-bg-center), var(--graph-bg-edge));
   cursor: grab;
   touch-action: none;
 }
